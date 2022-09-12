@@ -1,0 +1,8 @@
+Xilinx XFFT block, 16 parallel blocks, 16384 points each.
+
+The output m_axis interface will route tvalid, tlast and tuser from xfft 0.
+They are all synced together as input valid is shared.
+
+Tuser has the XK index to simplify post-processing, as output bins are bit-reversed
+to allow saving half the memory.
+

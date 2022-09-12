@@ -1,0 +1,2 @@
+This block is a single lane DDS + CIC block.
+Input data is fixed, 16 bits for I and Q components.
