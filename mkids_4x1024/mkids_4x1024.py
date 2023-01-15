@@ -1,5 +1,6 @@
 from pynq import Overlay, allocate
 import xrfdc
+import xrfclk
 from qick.qick import SocIp
 import matplotlib.pyplot as plt
 import time
@@ -7,6 +8,8 @@ import os
 import numpy as np
 
 class AxisPfb4x1024V1(SocIp):
+    """input PFB
+    """
     bindto = ['user.org:user:axis_pfb_4x1024_v1:1.0']
     REGISTERS = {'qout_reg' : 0}
     
@@ -72,10 +75,9 @@ class AxisDdsCicV2(SocIp):
     MIN_Q = 0
     MAX_Q = 24
     
-    # Sampling frequency and frequency resolution (Hz).
+    # Sampling frequency and frequency resolution (MHz).
     FS_DDS = 1000
     DF_DDS = 1
-    DF_DDS_MHZ = 1
     
     # DDS bits.
     B_DDS = 16
@@ -110,10 +112,9 @@ class AxisDdsCicV2(SocIp):
         self.decimation(2)
         
     def configure(self, fs):
-        fs_hz = fs*1000*1000
+        fs_hz = fs
         self.FS_DDS = fs_hz
         self.DF_DDS = self.FS_DDS/2**self.B_DDS
-        self.DF_DDS_MHZ = self.DF_DDS/1000/1000
         
     def dds_start(self):
         self.dds_sync_reg = 0
@@ -509,7 +510,7 @@ class AxisDdsV3(SocIp):
         
     def configure(self, fs_dds):
         # Frequency constants.
-        self.FS_DDS     = fs_dds*1000*1000
+        self.FS_DDS     = fs_dds
         self.DF_DDS     = self.FS_DDS/2**self.B_DDS
         self.DFI_DDS    = self.MAX_PHI/2**self.B_DDS
 
@@ -522,7 +523,7 @@ class AxisDdsV3(SocIp):
         Parameters
         ----------
         f : float
-            DDS frequency in Hz
+            DDS frequency in MHz
         fi : float
             DDS phase in degrees, range 0 to 360
         g : float
@@ -596,7 +597,7 @@ class AxisPfbSynth4x512V1(SocIp):
         # Default registers.
         self.qout_reg   = 0
 
-    def configure(self, fs,  mixer, dac):
+    def configure(self, fs,  mixer, dacname):
         # Sampling frequency at output of the PFB before DAC and its decimation
         self.fs = fs
 
@@ -608,8 +609,7 @@ class AxisPfbSynth4x512V1(SocIp):
 
         # Mixer.
         self.mixer = mixer
-        self.tile  = dac['tile']
-        self.block = dac['block']
+        self.dacname = dacname
 
     def get_fs(self):
         return self.fs
@@ -632,59 +632,29 @@ class AxisPfbSynth4x512V1(SocIp):
         f_ = f - self.FMIX
         k = np.round(f_/self.fc)
 
-        if k<0:
-            ch = int(np.mod(self.N + k,self.N))
-        else:
-            ch = int(np.mod(k,self.N))
+        # mod will always return a non-negative result if N is positive
+        ch = int(np.mod(k,self.N))
 
         return ch
 
     def ch2freq(self, ch):
-        freq = ch*self.fc
-        if isinstance(ch, np.ndarray):
-            freq[ch >= self.N/2] -= self.fs
-        elif ch >= self.N/2:
-            freq -= self.fs
+        """
+        freq = ch*fc for N<N/2
+        else, freq = (ch-N)*fc
+        """
+        folded_N = ((ch + self.N//2) % self.N) - self.N//2
+        freq = folded_N*self.fc
         return freq
 
     def set_fmix(self,f):
-        df = 4800/2**16
-        f = (round(f/df)+0.5)*df
-        self.mixer.set_freq(tile=self.tile, dac=self.block, f=f)
+        df = self.fb/2**16
+        f = (round(f/df))*df
+        self.mixer.set_mixer_freq(dacname=self.dacname, f=f)
         self.FMIX = f
 
     def get_fmix(self):
         return self.FMIX
     
-class Mixer:    
-    # rf
-    rf = 0
-    
-    def __init__(self, ip):        
-        # Get Mixer Object.
-        self.rf = ip
-    
-    def set_freq(self,f,tile,dac):
-        # Make a copy of mixer settings.
-        dac_mixer = self.rf.dac_tiles[tile].blocks[dac].MixerSettings        
-        new_mixcfg = dac_mixer.copy()
-
-        # Update the copy
-        new_mixcfg.update({
-            'EventSource': xrfdc.EVNT_SRC_IMMEDIATE,
-            'Freq' : f,
-            'MixerType': xrfdc.MIXER_TYPE_FINE,
-            'PhaseOffset' : 0})
-
-        # Update settings.                
-        self.rf.dac_tiles[tile].blocks[dac].MixerSettings = new_mixcfg
-        self.rf.dac_tiles[tile].blocks[dac].UpdateEvent(xrfdc.EVENT_MIXER)
-       
-    def set_nyquist(self,nz,tile,dac):
-        dac_tile = self.rf.dac_tiles[tile]
-        dac_block = dac_tile.blocks[dac]
-        dac_block.NyquistZone = nz          
-
 class TopSoc(Overlay):    
     # Constructor.
     def __init__(self, bitfile=None, force_init_clks=False,
@@ -709,7 +679,8 @@ class TopSoc(Overlay):
             self.download()        
 
         # Mixer.
-        self.mixer = Mixer(self.usp_rf_data_converter_0)
+        self.mixer = self.usp_rf_data_converter_0
+        self.mixer.configure(self)
 
         # RF data converter (for configuring ADCs and DACs)
         self.rf = self.usp_rf_data_converter_0
@@ -737,7 +708,7 @@ class TopSoc(Overlay):
         #################
         # PFB with 512 Channels for Synthesis.
         self.pfb_out = self.axis_pfbsynth_4x512_0
-        self.pfb_out.configure(self.dacs['20']['fs']/4, self.mixer, self.dacs['20'])
+        self.pfb_out.configure(self.dacs['20']['fs']/4, self.mixer, '20')
         
         # DDS with 512 Channels for Synthesis.
         self.dds_out = self.axis_dds_v3_0
@@ -748,10 +719,6 @@ class TopSoc(Overlay):
         self.stream.transfer_raw(nsamp=10000, first=True)
         self.chsel.alloff()
 
-    def freq2reg(self, fs, f, nbits=32):    
-        k_i = np.int64(2**nbits*f/fs)
-        return k_i 
-    
     def list_rf_blocks(self, rf_config):
         """
         Lists the enabled ADCs and DACs and get the sampling frequencies.
