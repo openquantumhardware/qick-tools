@@ -20,12 +20,10 @@ class Mkids():
         self.nInCh = self.pfb_in.N
         self.fcIn = self.pfb_in.get_fc()
         self.fbIn = self.pfb_in.get_fb()
-
         self.nOutCh = self.pfb_out.N
         self.fcOut = self.pfb_out.get_fc()
         self.fbOut = self.pfb_out.get_fb()
-        #self.fcOut = self.fsOut/self.pfb_out.N
-        #self.fbOut = self.fsOut/(self.pfb_out.N/2) # output channel bandwidth
+        
         # Start streamer and set default transfer length.
         self.streamLength = streamLength
         self.stream.set_nsamp(streamLength)
@@ -35,7 +33,7 @@ class Mkids():
         
         # First Dummy transfer for DMA.
         self.chsel.set_single(0)
-        self.stream.transfer_raw(first=True)
+        self.stream.transfer_raw(first=True, streamLength)
         self.chsel.alloff()
 
     def setDecimate(self, decimate):
