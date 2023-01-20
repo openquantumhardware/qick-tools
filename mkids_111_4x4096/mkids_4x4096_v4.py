@@ -322,7 +322,8 @@ class AxisStreamerV1(SocIp):
         if self.buff is None or nbuf > len(self.buff):
             self.buff = allocate(shape=(nbuf,), dtype=self.DTYPE)
         
-    def transfer_raw(self, first = False):
+    def transfer_raw(self, nsamp, first = False):
+        self.set_nsamp(nsamp)
         # DMA is always Not Idle on the first transfer.
         if first:
             # Start streamer.
@@ -860,7 +861,7 @@ class TopSoc(Overlay):
         
         # First Dummy transfer for DMA.
         self.chsel.set_single(0)
-        self.stream.transfer_raw(first=True)
+        self.stream.transfer_raw(streamLength, first=True)
         self.chsel.alloff()
         
         
