@@ -18,12 +18,14 @@ class Mkids():
 
         # Setup useful constants
         self.nInCh = self.pfb_in.N
-        self.fcIn = self.fsIn/self.pfb_in.N
-        self.fbIn = self.fsIn/(self.pfb_in.N/2) # input channel bandwidth
+        self.fcIn = self.pfb_in.get_fc()
+        self.fbIn = self.pfb_in.get_fb()
 
         self.nOutCh = self.pfb_out.N
-        self.fcOut = self.fsOut/self.pfb_out.N
-        self.fbOut = self.fsOut/(self.pfb_out.N/2) # output channel bandwidth
+        self.fcOut = self.pfb_out.get_fc()
+        self.fbOut = self.pfb_out.get_fb()
+        #self.fcOut = self.fsOut/self.pfb_out.N
+        #self.fbOut = self.fsOut/(self.pfb_out.N/2) # output channel bandwidth
         # Start streamer and set default transfer length.
         self.streamLength = streamLength
         self.stream.set_nsamp(streamLength)
