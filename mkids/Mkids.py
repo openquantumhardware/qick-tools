@@ -26,7 +26,7 @@ class Mkids():
         self.fbOut = self.fsOut/(self.pfb_out.N/2) # output channel bandwidth
         # Start streamer and set default transfer length.
         self.streamLength = streamLength
-        self.stream.set(streamLength)
+        self.stream.set_nsamp(streamLength)
 
         self.pfb_in.qout(8)
         self.setDecimate(decimation)
