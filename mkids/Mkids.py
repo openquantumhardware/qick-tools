@@ -33,7 +33,7 @@ class Mkids():
         
         # First Dummy transfer for DMA.
         self.chsel.set_single(0)
-        self.stream.transfer_raw(first=True, streamLength)
+        self.stream.transfer_raw(streamLength, first=True)
         self.chsel.alloff()
 
     def setDecimate(self, decimate):
