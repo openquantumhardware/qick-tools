@@ -261,7 +261,8 @@ class AxisStreamerV1(SocIp):
     # * 1 : continuous.
     bindto = ['user.org:user:axis_streamer_v1:1.0']
     REGISTERS = {'start_reg' : 0, 'nsamp_reg' : 1, 'mode_reg' : 2}
-    
+    DTYPE = np.int16
+
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
@@ -287,6 +288,9 @@ class AxisStreamerV1(SocIp):
         # Number of useful samples per transaction.
         self.NS_NI = self.NS + self.NI
         
+        # Placeholder buffer to hold data transfers
+        self.buff = None
+        
     def configure(self,axi_dma, oneShot=True):
         if oneShot:
             self.mode_reg  = 0  # one-shot.
@@ -303,11 +307,20 @@ class AxisStreamerV1(SocIp):
     def start(self):
         self.start_reg = 1
 
-    def set(self, nsamp=100):
+    #def set(self, nsamp=100):
+    #    # Configure parameters.
+    #    self.nsamp_reg  = nsamp
+    #    nbuf = nsamp*self.NS_TR
+    #    self.buff = allocate(shape=(nbuf,), dtype=np.int16)
+
+    def set_nsamp(self, nsamp):
         # Configure parameters.
         self.nsamp_reg  = nsamp
         nbuf = nsamp*self.NS_TR
-        self.buff = allocate(shape=(nbuf,), dtype=np.int16)
+        # if we need a bigger buffer, allocate one
+        # it's possible to exhaust the supply of DMA-able memory, so we only do this if necessary
+        if self.buff is None or nbuf > len(self.buff):
+            self.buff = allocate(shape=(nbuf,), dtype=self.DTYPE)
         
     def transfer_raw(self, first = False):
         # DMA is always Not Idle on the first transfer.
@@ -840,7 +853,7 @@ class TopSoc(Overlay):
 
         # Start streamer and set default transfer length.
         self.streamLength = streamLength
-        self.stream.set(streamLength)
+        self.stream.set_nsamp(streamLength)
 
         self.pfb_in.qout(8)
         self.setDecimate(decimation)
