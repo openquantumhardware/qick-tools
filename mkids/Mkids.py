@@ -1,6 +1,7 @@
 import sys
 import MkidsSoc
 import numpy as np
+import xrfdc
 
 class Mkids():
     def __init__(self, soc, decimation=2, streamLength=10000):
@@ -31,6 +32,15 @@ class Mkids():
         self.pfb_in.qout(8)
         self.setDecimate(decimation)
         
+        # Define the mixer
+        self.mixer = Mixer(soc._soc.usp_rf_data_converter_0)
+        self.multiTile = soc.multiTile
+        self.multiBlock = soc.multiBlock
+        
+        self.dfMixer = 0.25
+        self.fMixerQuantized = None
+        self.setFMixer(1024.25) # Set a default value for the mixer
+     
         # First Dummy transfer for DMA.
         self.chsel.set_single(0)
         self.stream.transfer_raw(streamLength, first=True)
@@ -66,3 +76,44 @@ class Mkids():
         print(" bandwidth of each output channel: %7.2f MHz"%self.fbOut)
         print("  spacing between output channels: %7.2f MHz"%self.fcOut)
         print("           total output bandwidth: %7.2f MHz"%(self.nOutCh*self.fcOut))
+
+    def setFMixer(self, fMixer):
+        self.fMixerRequested = fMixer
+        temp = self.dfMixer*np.floor(fMixer/self.dfMixer)
+        # Send the command to set_freq only if it is new
+        if temp != self.fMixerQuantized:
+            self.fMixerQuantized = temp
+            self.mixer.set_freq(self.fMixerQuantized,
+                                self.multiTile, 
+                                self.multiBlock)
+           
+class Mixer:    
+    # rf
+    rf = 0
+    
+    def __init__(self, ip):        
+        # Get Mixer Object.
+        self.rf = ip
+    
+    def set_freq(self,f,tile,dac):
+        # Make a copy of mixer settings.
+        dac_mixer = self.rf.dac_tiles[tile].blocks[dac].MixerSettings        
+        new_mixcfg = dac_mixer.copy()
+
+        # Update the copy
+        new_mixcfg.update({
+            'EventSource': xrfdc.EVNT_SRC_IMMEDIATE,
+            'Freq' : f,
+            'MixerType': xrfdc.MIXER_TYPE_FINE,
+            'PhaseOffset' : 0})
+
+        # Update settings.                
+        self.rf.dac_tiles[tile].blocks[dac].MixerSettings = new_mixcfg
+        self.rf.dac_tiles[tile].blocks[dac].UpdateEvent(xrfdc.EVENT_MIXER)
+       
+    def set_nyquist(self,nz,tile,dac):
+        dac_tile = self.rf.dac_tiles[tile]
+        dac_block = dac_tile.blocks[dac]
+        dac_block.NyquistZone = nz          
+
+
