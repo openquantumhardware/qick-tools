@@ -14,3 +14,10 @@ class MkidsSoc():
             self._soc = mkids_4x4096_v4.TopSoc(bitFileName, 
                                               ignore_version=ignore_version, 
                                               force_init_clks=force_init_clks)
+            
+            self.multiTile = self._soc.dacs['12']['tile']
+            self.multiBlock  = self._soc.dacs['12']['block']
+            self.multiFc = (self._soc.dacs['12']['fs']/4)/self._soc.pfb_out.N
+            self.fs_adc = self._soc.adcs['00']['fs']
+            self.fsIn = self.fs_adc/2 # Hardwired x2 decimation in ADC
+
