@@ -224,7 +224,7 @@ class Mkids():
 
         f = frequency - self.fMixerQuantized
         ch = self.pfb_out.freq2ch(f)
-        fOutCenters = self.outCh2freq(ch)
+        fOutCenters = self.outCh2FreqCenter(ch)
         offsets = f - fOutCenters + self.fMixerQuantized
         return ch,offsets
  
