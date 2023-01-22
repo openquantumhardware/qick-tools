@@ -2,7 +2,8 @@ import sys
 import MkidsSoc
 import numpy as np
 import xrfdc
-           
+import time 
+from collections import OrderedDict
 class Mixer():
     # rf
     rf = 0
@@ -46,13 +47,14 @@ class Mkids():
         self.ddscic = self.soc._soc.ddscic
         self.chsel = self.soc._soc.chsel
         self.board = self.soc.board
-
+        self.dds_out = self.soc._soc.dds_out
         self.nInCh = self.pfb_in.N
         self.fcIn = self.pfb_in.get_fc()
         self.fbIn = self.pfb_in.get_fb()
         self.nOutCh = self.pfb_out.N
         self.fcOut = self.pfb_out.get_fc()
         self.fbOut = self.pfb_out.get_fb()
+        self.dfDdsMhz = max(self.dds_out.DF_DDS,self.ddscic.DF_DDS)/1e6
         
         # Start streamer and set default transfer length.
         self.streamLength = streamLength
@@ -106,6 +108,9 @@ class Mkids():
         print("  spacing between output channels: %7.2f MHz"%self.fcOut)
         print("           total output bandwidth: %7.2f MHz"%(self.nOutCh*self.fcOut))
 
+        print("")
+        print("      frequency quantization size: %f Hz"%(1e6*self.dfDdsMhz))
+        
     def setFMixer(self, fMixer):
         self.fMixerRequested = fMixer
         temp = self.dfMixer*np.floor(fMixer/self.dfMixer)
@@ -246,3 +251,93 @@ class Mkids():
         f = self.pfb_out.ch2freq(ch)
         frequency = f + self.fMixerQuantized
         return frequency
+
+    def setMultiTones(self, amplitudes, frequencies, fis, fMixer, verbose=False):
+        """
+        Generates tones on the output DAC
+        """
+        self.multiAmplitudes = amplitudes
+        self.multiFreqs = np.floor(frequencies/self.dfDdsMhz)*self.dfDdsMhz
+        if verbose: 
+            print("setMultiTones:  multiFreqs =",self.multiFreqs)
+        if not self.outTonesInUniqueChannels(self.multiFreqs, fMixer):
+            for freq in self.multiFreqs:
+                outCh = self.outFreq2ch(freq)
+                print("outCh=%4d freq=%f"%(outCh,freq))
+            raise ValueError("Tones are not in unique output channels")
+        self.multiFis = fis
+        self.dds_out.alloff()
+        self.setFMixer(fMixer)
+        if verbose:
+            print("setMultiTones:  fMixer =",fMixer, " fMixerQuantized =",self.fMixerQuantized)
+        self.multiOutChs, self.multiOutDdss = self.outFreq2chOffset(self.multiFreqs)
+        for multiOutDds, amplitude, outCh, fi in zip(self.multiOutDdss, self.multiAmplitudes, self.multiOutChs, self.multiFis):
+            if verbose:
+                print("setMultiTones:  outCh=%4d f=%+f amplitude=%f "%(outCh, multiOutDds, amplitude))
+            self.dds_out.ddscfg(f=multiOutDds*1e6, fi=np.degrees(fi), g=amplitude, ch=outCh)
+        # Prepare for readouts
+        self.multiInChs, self.inDdss = self.inFreq2chOffset(self.multiFreqs)
+        self.ddscic.dds_outsel(outsel="product")
+        for inCh, inDds in zip(self.multiInChs, self.inDdss):       
+            if verbose:
+                print("setMultiTones:   inCh=%4d f=%+f"%(inCh, inDds))
+            self.ddscic.set_ddsfreq(inCh, inDds*1e6)
+        self.idxs = np.mod(self.multiInChs,8)
+        self.setupReadAllMultitones(verbose)
+        return
+     
+    def outTonesInUniqueChannels(self, outFreqs, fMixer):
+        """ See if requested tones are in unique channels.  Returns a boolean"""
+        self.setFMixer(fMixer)
+        outChs = self.outFreq2ch(outFreqs)
+        nUnique = len(np.unique(outChs))
+        return nUnique == len(outChs)
+    
+    def setupReadAllMultitones(self, verbose=False):
+        self.chsel.alloff()
+        datas = np.zeros(int(self.chsel.NM), dtype=np.uint32)
+        for inCh in self.multiInChs:
+            [ntran, bit] = self.chsel.ch2tran(inCh)
+            addr = int(np.floor(ntran/32))
+            datas[addr] |= 2**bit
+            if verbose: print("setupReadAllMultitones: for inCh=%d set bit=%d in addr=%d"%(inCh,bit,addr))
+        for addr,data in enumerate(datas):
+            if verbose: print("setupReadAllMultitones: addr=%2d  data=%08x"%(addr,data))
+            self.chsel.addr_reg = addr
+            self.chsel.data_reg = data
+            self.chsel.we_reg = 1
+            self.chsel.we_reg = 0
+        time.sleep(0.1)
+        _ = self.stream.transfer(nt=1)
+        
+    def readAllMultiTones(self, nt=1):
+        packets = self.stream.transfer(nt=nt)
+        self.packets = packets # stash this here in case you want to inspect in detail
+        data_iq = packets[:,:,:16].reshape((-1,16)).T
+        d16 = packets[:,:,16]
+        data_iqs = OrderedDict()
+        nSamples = OrderedDict()
+        xs = OrderedDict()
+        for inCh in self.multiInChs:
+            inCh8 = inCh//8
+            data_iqs[inCh8] = []
+            nSamples[inCh8] = 0
+        for it in range(packets.shape[0]):
+            i0 = it*packets.shape[1]
+            i1 = i0+packets.shape[1]
+            for inCh8 in np.unique(np.int16(self.multiInChs/8)):
+                data_iqs[inCh8].append(data_iq[:,i0:i1][:,d16[it,:]==inCh8])
+                nSamples[inCh8] += (data_iqs[inCh8][-1].size)//16
+        for inCh,idx in zip(self.multiInChs, self.idxs):
+            inCh8 = inCh//8
+            xs[inCh] = np.zeros(nSamples[inCh8], dtype=complex)
+            i0 = 0
+            i1 = 0
+            for data_iq in data_iqs[inCh8]:
+                i1 += data_iq.size//16
+                xs[inCh][i0:i1].real, xs[inCh][i0:i1].imag = data_iq[2*idx:2*idx+2]
+                i0 = i1
+        return xs
+
+
+
