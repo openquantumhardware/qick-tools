@@ -4,6 +4,8 @@ import numpy as np
 import xrfdc
 import time 
 from collections import OrderedDict
+from tqdm.notebook import trange, tqdm
+import matplotlib.pyplot as plt
 class Mixer():
     # rf
     rf = 0
@@ -24,7 +26,7 @@ class Mixer():
             'MixerType': xrfdc.MIXER_TYPE_FINE,
             'PhaseOffset' : 0})
 
-        # Update settings.                
+        # Update settings.             
         self.rf.dac_tiles[tile].blocks[dac].MixerSettings = new_mixcfg
         self.rf.dac_tiles[tile].blocks[dac].UpdateEvent(xrfdc.EVENT_MIXER)
        
@@ -252,10 +254,11 @@ class Mkids():
         frequency = f + self.fMixerQuantized
         return frequency
 
-    def setMultiTones(self, amplitudes, frequencies, fis, fMixer, verbose=False):
+    def setMultiTones(self, frequencies, amplitudes, fis, fMixer, verbose=False):
         """
         Generates tones on the output DAC
         """
+        self.setFMixer(fMixer)
         self.multiAmplitudes = amplitudes
         self.multiFreqs = np.floor(frequencies/self.dfDdsMhz)*self.dfDdsMhz
         if verbose: 
@@ -263,7 +266,7 @@ class Mkids():
         if not self.outTonesInUniqueChannels(self.multiFreqs, fMixer):
             for freq in self.multiFreqs:
                 outCh = self.outFreq2ch(freq)
-                print("outCh=%4d freq=%f"%(outCh,freq))
+                print("Trouble:  outCh=%4d freq=%f"%(outCh,freq))
             raise ValueError("Tones are not in unique output channels")
         self.multiFis = fis
         self.dds_out.alloff()
@@ -339,5 +342,143 @@ class Mkids():
                 i0 = i1
         return xs
 
+    def fiAmpFromMulti(self, fTones, fis, amplitudes,fMixer, nt=1, verbose=False):
+        if verbose:
+            print("fiAmpFromMulti:  fTones =",fTones)
+        xs = self.setAndReadMultiTones(np.array(fTones), np.array(fis),
+                                       np.array(amplitudes), fMixer, nt, 
+                                       verbose=verbose)
+        inChs = self.inFreq2ch(np.array(fTones))
+        fiOuts = np.zeros(len(fTones))
+        ampOuts = np.zeros(len(fTones))
+        for i,inCh in enumerate(inChs):
+            x = xs[inCh]
+            fiMeas = np.angle(x.mean())
+            fiOuts[i] = np.angle(np.exp(1j*(fiMeas-fis[i])))
+            ampOuts[i] = np.abs(x.mean())
+        return fiOuts, ampOuts
+    
+    def setAndReadMultiTones(self, fTones, fis, amplitudes,fMixer,nt=1,verbose=False):
+        self.setMultiTones(np.array(fTones), np.array(amplitudes),  np.array(fis),
+                           fMixer, verbose=verbose)   
+        self.setupReadAllMultitones()
+        xs = self.readAllMultiTones(nt=nt)
+        return xs
+  
+    def multiToneScan(self, fTones, amplitudes, fis, bandwidth, nMeas, fMixer, nt,
+                      includeEndpoints=False,
+                      verbose=False, doProgress=False):
+        
+        """
+        Perform a scan with multiple tones
+
+        Parameters
+        ----------
+        fTones:
+            np array of tone frequencies at center of scan [MHz]
+        amplitudes:
+            np array of tone amplitudes (ranging from 0 to 1)
+        fis:
+            np array of phase values, in Radians
+        
+        bandwidth:
+            width of scan, in MHz
+            
+        nMeas:
+            number of measurements to make inside the bandwidth
+        
+        fMixer:
+            mixer frequency (in MHz)
+            
+        nt:
+            number of measurements at each frequency step
+            
+        verbose:
+            True to dump output
+            
+        doProgress:
+            True to show tqdm progress bar
+            
+        Returns
+        -------
+        
+        A dictionary containing:
+        'dfs' -- the nMeas delta frequency values used to scan [MHz]
+        'amplitudes' -- the measured amplitudes, for each tone
+        'fis' -- the measured phases [Radians]
+        'fMixer' -- the mixer frequency used 
+        'fTones' -- the central tone values used
+        """
+  
+        self.setFMixer(fMixer)
+        if verbose:
+            print("multiToneScan:  fTones =",fTones)
+        if nMeas == 1:
+            dfs = np.zeros(1)
+        else:
+            if includeEndpoints:
+                dfs = np.linspace(0, bandwidth, num=nMeas, endpoint=True) - bandwidth/2
+            else:
+                dfs = (0.5+np.arange(nMeas))*bandwidth/(nMeas) - bandwidth/2
+        if verbose:
+            print("multiToneScan:  dfs =",dfs)
+        fiOuts = np.zeros((len(fTones), nMeas ))
+        ampOuts = np.zeros((len(fTones), nMeas))
+
+        if doProgress:
+            iValues = trange(len(dfs))
+        else:
+            iValues = range(len(dfs))
+        for i in iValues:
+            df = dfs[i]
+            if verbose:
+                print("multiToneScan:  i=%d  df=%f"%(i,df))
+                print("multiToneScan:  fTones+df =",fTones+df)
+            fiOuts[:,i], ampOuts[:,i] = self.fiAmpFromMulti(fTones+df, fis, amplitudes, fMixer, nt,verbose=verbose)
+        return {"dfs":dfs,"fis":fiOuts,"amplitudes":ampOuts,
+                "fMixer":fMixer, "fTones":fTones}
+     
+    def mtsPlot(self, mts, iTone, milliRad=False):
+        """
+        Plot the values in the results of multiTonScan (mts) for the tone.
+        
+        Use millrad=True to expand phase axis
+        """
+        freqs = mts['dfs'] + mts['fTones'][iTone]
+        amplitudes = mts['amplitudes'][iTone]
+        fis = mts['fis'][iTone]
+        fig,ax = plt.subplots(2,1,sharex=True)
+        fc = freqs.mean()
+        ax[0].plot(freqs-fc, amplitudes, "o-")
+        ax[0].set_ylabel("amplitude [ADCs]")
+        ax[1].set_xlabel("frequency-%.2f [MHz]"%fc)
+
+        if milliRad:
+            fisMean = fis.mean()
+            ax[1].plot(freqs-fc, 1000*(fis-fisMean), "o-")
+            ax[1].set_ylabel("$\Delta$ phase [mRadians]")
+        else:
+            ax[1].plot(freqs-fc, fis, "o-")
+            ax[1].set_ylabel("phase [Radians]")
+ 
+    def mtsUnwind(self, mts):
+        """
+        organize the results of a multiToneScan to three arrays, returning
+        a tuple of (freqx, amps, fis)
+        """
+        dfs = mts['dfs']
+        fTones = mts['fTones']
+        freqs = np.zeros((len(fTones),len(dfs)))
+        #amps = np.zeros((len(fTones),len(dfs)))
+        #fiss = np.zeros((len(fTones),len(dfs)))
+        for i,fTone in enumerate(fTones):
+            freqs[i,:] = fTones[i]+dfs
+            #amps[i,:] = mts['amplitudes'][i]
+            #fis[i,:] =  mts['fis']
+        freqs = freqs.ravel()
+        amps = mts['amplitudes'].ravel()
+        fis = mts['fis'].ravel()
+        inds = np.argsort(freqs)
+        return freqs[inds], amps[inds], fis[inds]
 
 
