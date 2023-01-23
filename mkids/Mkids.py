@@ -2,8 +2,10 @@ import sys
 import MkidsSoc
 import numpy as np
 import xrfdc
-import time 
+import copy, time 
 from collections import OrderedDict
+from numpy.polynomial.polynomial import Polynomial
+
 from tqdm.notebook import trange, tqdm
 import matplotlib.pyplot as plt
 class Mixer():
@@ -78,6 +80,9 @@ class Mkids():
         self.chsel.set_single(0)
         self.stream.transfer_raw(streamLength, first=True)
         self.chsel.alloff()
+        
+        # Calibration information
+        self.nominalDelayMts = None
 
     def setDecimate(self, decimate):
         """
@@ -464,7 +469,7 @@ class Mkids():
     def mtsUnwind(self, mts):
         """
         organize the results of a multiToneScan to three arrays, returning
-        a tuple of (freqx, amps, fis)
+        a tuple of (freqs, amps, fis)
         """
         dfs = mts['dfs']
         fTones = mts['fTones']
@@ -481,4 +486,94 @@ class Mkids():
         inds = np.argsort(freqs)
         return freqs[inds], amps[inds], fis[inds]
 
+    def measureNominalDelay(self, outCh, nMeas=10, nt=1, verbose=False, doProgress=False, doPlot=False):
+        """
+        Measure the nominal delay near the center of one output channel.
+        
+        Parameters
+        ----------
+        outCh
+            output channel number to use
+            
+        nMeas
+            number of frequency steps to take
+            
+        nt
+            number of measurements each frequency
+            
+        verbose
+            True to get diagnostics printed to stdout
+            
+        doProgress
+            True to show progress bar in a jupyter notebook
+            
+        doPlot
+            True to make a plot to show fit and residual
+            
+        Return
+        ------
+        nominalDelay
+            in microseconds
+        """
+        toneFreqs = np.array([self.outCh2FreqCenter(outCh)])
+        toneAmplitudes = np.array([0.9])
+        toneFis = np.array([0.0])
+        bandwidth = self.fcOut/1000
+        fMixer = self.fMixerQuantized
+        self.nominalDelayMts = self.multiToneScan(toneFreqs, toneAmplitudes, toneFis,
+                                            bandwidth, nMeas, fMixer, nt, 
+                                            verbose=verbose,
+                                            doProgress=doProgress)
+        iTone = 0
+        dfs = self.nominalDelayMts['dfs']
+        fis = self.nominalDelayMts['fis'][iTone]
+        ufis = self.unwrapPhis(fis)
+        fit = Polynomial.fit(dfs, ufis, 1)
+        nominalDelay = fit.convert().coef[1]
+        if doPlot:
+                #plt.plot(dfs,fis, ".-")
+                fig,ax = plt.subplots(2,1,sharex=True)
+                ax[0].plot(dfs, ufis, ".",label="data")
+                ax[0].plot(dfs, fit(dfs), label="fit")
+                ax[0].set_ylabel("unwrapped phase [Radians]")
+                ax[0].legend()
+                ax[1].plot(dfs, ufis-fit(dfs),'.')
+                ax[1].set_ylabel("fit residual [Radians]")
+                ax[1].set_xlabel("f offset in out channel")
+                plt.suptitle("outCh=%d DDSDelay = %f $\mu$sec"%(outCh,nominalDelay))
+        return nominalDelay
 
+    def unwrapPhis(self, phis, sign=1):
+        """
+        Increment (or decrement) values after a large change in phase to unwrap them
+        """
+        uphis = sign*(phis.copy())
+        for i in range(1,len(uphis)):
+            if uphis[i-1] > uphis[i]:
+                uphis[i:] += 2*np.pi
+        return sign*uphis
+
+    def applyDelayCorrection(self, mts, delay):
+        """
+        Apply the delay correction to phases in the mts
+        
+        Parameters
+        ----------
+        
+        mts
+            results of the multi tone scan to correct
+            
+        delay
+            result of measureNominalDelay (in microseconds)
+            
+        Return
+        ------
+        mtsOut
+            a deep copy of the input mts with phases corrected
+        """
+        mtsOut = copy.deepcopy(mts)
+        for iTone in range(len(mtsOut['fis'])):
+            freqs = mts['fTones'][iTone] + mts['dfs']
+            fis = mts['fis'][iTone]
+            mtsOut['fis'][iTone] = np.angle(np.exp(1j*(fis - delay*freqs)))
+        return mtsOut
