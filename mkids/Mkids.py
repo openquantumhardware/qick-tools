@@ -320,7 +320,7 @@ class Mkids():
             self.chsel.data_reg = data
             self.chsel.we_reg = 1
             self.chsel.we_reg = 0
-        time.sleep(0.1)
+        time.sleep(0.01)
         _ = self.stream.transfer(nt=1)
         
     def readAllMultiTones(self, nt=1):
@@ -583,21 +583,23 @@ class Mkids():
             mtsOut['fis'][iTone] = np.angle(np.exp(1j*(fis - delay*freqs)))
         return mtsOut
     
-    def makeCorrection(self, fMixer, fMin, fMax, delay, nMeas=100, nt=4, verbose=True):
+    def makeCorrection(self, fMixer, fMin, fMax, delay, nMeas=100, nt=4, verbose=False, doProgress=False):
         self.setFMixer(fMixer)
         fcMax = max(self.fcIn, self.fcOut)
         fcMin = min(self.fcIn, self.fcOut)
         print(fcMin, fcMax)
         fMinCentered = self.outCh2FreqCenter(self.outFreq2ch(fMin))
         fMaxCentered = self.outCh2FreqCenter(self.outFreq2ch(fMax))
-        fTones =  np.arange(fMin-fcMax, fMax+fcMax, self.fcOut)
+        toneFreqs =  np.arange(fMin-fcMax, fMax+fcMax, self.fcOut)
         toneAmplitudes = np.ones(len(toneFreqs))*0.9/len(toneFreqs)
         np.random.seed(12394321)
         toneFis = 2* np.pi * np.random.uniform(size=len(toneFreqs))
-        bandwidth = mkids.fcOut
-        nMeas = 100
-        
-    def makeCorrectionsOld(self, fMin, fMax, mts, delay, verbose=True):
+        bandwidth = self.fcOut
+        streamLength = 100*len(toneFreqs)
+        print("streamLength =",streamLength)
+        self.setStreamLength(streamLength)
+        mts = self.multiToneScan(toneFreqs, toneAmplitudes, toneFis, 
+                    bandwidth, nMeas, fMixer, nt, verbose=verbose, doProgress=doProgress)
         """
         With the frequencies use the results of the mts to create a calibration dictionary.  Begin by applying the delay corrections to the phases, and then save data segments of frequency,amplitude, and phase.
         
@@ -657,7 +659,7 @@ class Mkids():
         
 #when to apply delay correction the MTS used to make corrections, and to this mts?
 
-    def applyCorrection(self, mts, correction, verbose=False):
+    def applyCorrection(self, mts, correction, toneAmplitudes, verbose=False):
         """
         Apply the amplitude, phase, and delay corrections.
         
@@ -669,9 +671,9 @@ class Mkids():
         if verbose: print("applyCorrection: prepare interpolation functions")
         ampFuncsCorr = []
         fiFuncsCorr = []
-        for freqs,amps,fis in zip(correction['freqsCorr'],correction['ampsCorr'],correction['fisCorr']):
-            ampFuncsCorr.append(interp1d(freqs,amps))
-            fiFuncsCorr.append(interp1d(freqs,fis))
+        for index,(freqs,amps,fis) in enumerate(zip(correction['freqsCorr'],correction['ampsCorr'],correction['fisCorr'])):
+            ampFuncsCorr.append(interp1d(freqs,amps, fill_value='extrapolate'))
+            fiFuncsCorr.append(interp1d(freqs,fis, fill_value='extrapolate'))
 
         fList = correction['fList']
         for iTone in range(len(mtsDelayed['fTones'])):
@@ -679,12 +681,10 @@ class Mkids():
             freqs = mtsDelayed['dfs'] + mtsDelayed['fTones'][iTone]
             amplitudes = mtsDelayed['amplitudes'][iTone]
             fis = mtsDelayed['fis'][iTone]
-            #plt.plot(freqs,fis)
             for iPoint, (freq,amplitude,fi) in enumerate(zip(freqs,amplitudes,fis)):
                 index = np.searchsorted(fList, freq) - 1
                 ampCorr = ampFuncsCorr[index](freq)
                 fiCorr = fiFuncsCorr[index](freq)
-                #print(freq, index, amplitude,ampCorr, fi, fiCorr)
-                mtsDelayed['amplitudes'][iTone][iPoint] = amplitude/ampCorr
+                mtsDelayed['amplitudes'][iTone][iPoint] = toneAmplitudes[iTone]*amplitude/ampCorr
                 mtsDelayed['fis'][iTone][iPoint] =  np.angle(np.exp(1j*(fi-fiCorr)))
         return mtsDelayed 
