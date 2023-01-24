@@ -5,6 +5,7 @@ import xrfdc
 import copy, time 
 from collections import OrderedDict
 from numpy.polynomial.polynomial import Polynomial
+from scipy.interpolate import interp1d
 
 from tqdm.notebook import trange, tqdm
 import matplotlib.pyplot as plt
@@ -60,10 +61,12 @@ class Mkids():
         self.fbOut = self.pfb_out.get_fb()
         self.dfDdsMhz = max(self.dds_out.DF_DDS,self.ddscic.DF_DDS)/1e6
         
-        # Start streamer and set default transfer length.
-        self.streamLength = streamLength
-        self.stream.set_nsamp(streamLength)
-
+        # Setup streaming
+        self.setStreamLength(streamLength)
+        self.chsel.set_single(0)
+        self.stream.transfer_raw(streamLength, first=True)
+        self.chsel.alloff()
+        
         self.pfb_in.qout(8)
         self.setDecimate(decimation)
         
@@ -76,14 +79,16 @@ class Mkids():
         self.fMixerQuantized = None
         self.setFMixer(1024.25) # Set a default value for the mixer
      
-        # First Dummy transfer for DMA.
-        self.chsel.set_single(0)
-        self.stream.transfer_raw(streamLength, first=True)
-        self.chsel.alloff()
         
         # Calibration information
         self.nominalDelayMts = None
 
+    def setStreamLength(self, streamLength):
+        self.streamLength = streamLength
+        self.stream.set_nsamp(streamLength)
+        # do a dummy transfer to clear out old data here?
+       
+        
     def setDecimate(self, decimate):
         """
         Set the decimation value pfbcic values 
@@ -577,3 +582,109 @@ class Mkids():
             fis = mts['fis'][iTone]
             mtsOut['fis'][iTone] = np.angle(np.exp(1j*(fis - delay*freqs)))
         return mtsOut
+    
+    def makeCorrection(self, fMixer, fMin, fMax, delay, nMeas=100, nt=4, verbose=True):
+        self.setFMixer(fMixer)
+        fcMax = max(self.fcIn, self.fcOut)
+        fcMin = min(self.fcIn, self.fcOut)
+        print(fcMin, fcMax)
+        fMinCentered = self.outCh2FreqCenter(self.outFreq2ch(fMin))
+        fMaxCentered = self.outCh2FreqCenter(self.outFreq2ch(fMax))
+        fTones =  np.arange(fMin-fcMax, fMax+fcMax, self.fcOut)
+        toneAmplitudes = np.ones(len(toneFreqs))*0.9/len(toneFreqs)
+        np.random.seed(12394321)
+        toneFis = 2* np.pi * np.random.uniform(size=len(toneFreqs))
+        bandwidth = mkids.fcOut
+        nMeas = 100
+        
+    def makeCorrectionsOld(self, fMin, fMax, mts, delay, verbose=True):
+        """
+        With the frequencies use the results of the mts to create a calibration dictionary.  Begin by applying the delay corrections to the phases, and then save data segments of frequency,amplitude, and phase.
+        
+        The mts is from multiToneScan, where it is configured to yield a continuous measurements in the frequency range.
+        
+        delay is the nominal delay
+        """
+        if verbose:
+            print("makeCorrectionsOld: fMin,fMax =",fMin,fMax)
+        fList = []
+        # Add boundaries of input channels to fList
+        
+        freq = self.inCh2FreqCenter(self.inFreq2ch(fMin)) -  self.fcIn/2
+        fEnd = self.inCh2FreqCenter(self.inFreq2ch(fMax)) +  self.fcIn/2
+        while True:
+            fList.append(freq)
+            freq += self.fcIn
+            if freq >= fEnd: 
+                fList.append(freq)
+                break
+
+        print(self.outFreq2ch(fMin))       
+        freq = self.outCh2FreqCenter(self.outFreq2ch(fMin)) -  self.fcOut/2
+        fEnd = self.outCh2FreqCenter(self.outFreq2ch(fMax)) +  self.fcOut/2
+        while True:
+            fList.append(freq)
+            freq += self.fcOut
+            if freq >= fEnd: 
+                fList.append(freq)
+                break
+
+        fList = np.sort(np.unique(np.array(fList)))
+        mtsDelayed = self.applyDelayCorrection(mts, delay)
+        freqs, amps, fis = self.mtsUnwind(mtsDelayed)
+        freqsCorr = []
+        ampsCorr = []
+        fisCorr = []
+        for i in range(len(fList)-1):
+            inds = (freqs > fList[i]) & (freqs < fList[i+1]) # non-inclusive both sides
+            freqsCorr.append(freqs[inds])
+            ampsCorr.append(amps[inds])
+            fisCorr.append(fis[inds])
+        if verbose:
+            print("makeCorrectionsOld:  fList =",fList)
+        
+        correction = {
+            "fMixer":self.fMixerQuantized,
+            "fList":fList,
+            "freqsCorr":freqsCorr,
+            "ampsCorr":ampsCorr,
+            "fisCorr":fisCorr,
+            "fMin":fMin,
+            "fMax":fMax,
+            "delay":delay}
+        
+        return correction
+        
+#when to apply delay correction the MTS used to make corrections, and to this mts?
+
+    def applyCorrection(self, mts, correction, verbose=False):
+        """
+        Apply the amplitude, phase, and delay corrections.
+        
+        The mts is from multiToneScan.
+        """
+        if verbose: print("applyCorrection:  delay =",correction['delay'])
+        mtsDelayed = self.applyDelayCorrection(mts, correction['delay'])
+ 
+        if verbose: print("applyCorrection: prepare interpolation functions")
+        ampFuncsCorr = []
+        fiFuncsCorr = []
+        for freqs,amps,fis in zip(correction['freqsCorr'],correction['ampsCorr'],correction['fisCorr']):
+            ampFuncsCorr.append(interp1d(freqs,amps))
+            fiFuncsCorr.append(interp1d(freqs,fis))
+
+        fList = correction['fList']
+        for iTone in range(len(mtsDelayed['fTones'])):
+            if verbose: print(" iTone =", iTone)
+            freqs = mtsDelayed['dfs'] + mtsDelayed['fTones'][iTone]
+            amplitudes = mtsDelayed['amplitudes'][iTone]
+            fis = mtsDelayed['fis'][iTone]
+            #plt.plot(freqs,fis)
+            for iPoint, (freq,amplitude,fi) in enumerate(zip(freqs,amplitudes,fis)):
+                index = np.searchsorted(fList, freq) - 1
+                ampCorr = ampFuncsCorr[index](freq)
+                fiCorr = fiFuncsCorr[index](freq)
+                #print(freq, index, amplitude,ampCorr, fi, fiCorr)
+                mtsDelayed['amplitudes'][iTone][iPoint] = amplitude/ampCorr
+                mtsDelayed['fis'][iTone][iPoint] =  np.angle(np.exp(1j*(fi-fiCorr)))
+        return mtsDelayed 
