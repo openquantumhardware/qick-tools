@@ -142,6 +142,9 @@ class AxisDdsCicV2(SocIp):
             self.qsel(qsel)    
     
     def set_ddsfreq(self, ch_id=0, f=0):
+        self.set_ddsfreqHz(ch_id, f*1e6)
+        
+    def set_ddsfreqHz(self, ch_id=0, f=0):
         # Sanity check.
         if (ch_id >= 0 and ch_id < self.NCH_TOTAL):
             if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
@@ -486,6 +489,9 @@ class AxisDdsV2(SocIp):
         self.dds_sync_reg   = 0
 
     def ddscfg(self, f=0, fi=0, g=0, ch=0, sel="dds"):
+        self.ddscfgHz(f=f*1e6, fi=fi, g=g, ch=ch, sel=sel)
+        
+    def ddscfgHz(self, f=0, fi=0, g=0, ch=0, sel="dds"):
         # Sanity check.
         if (ch >= 0 and ch < self.NCH_TOTAL):
             if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
@@ -575,7 +581,7 @@ class AxisDdsV3(SocIp):
         for i in range(self.NCH_TOTAL):
             self.ddscfg(ch = i)
 
-        # Start DDS.
+        # Start DDS
         self.start()
         
     def configure(self, fs):
@@ -588,6 +594,9 @@ class AxisDdsV3(SocIp):
         self.dds_sync_reg   = 0
 
     def ddscfg(self, f=0, fi=0, g=0, ch=0, sel="dds"):
+        self.ddscfgHz(f=f*1e6, fi=fi, g=g, ch=ch, sel=sel)
+
+    def ddscfgHz(self, f=0, fi=0, g=0, ch=0, sel="dds"):
         # Sanity check.
         if (ch >= 0 and ch < self.NCH_TOTAL):
             if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
@@ -851,7 +860,9 @@ class TopSoc(Overlay):
        
         # Mixer.
         self.mixer = Mixer(self.usp_rf_data_converter_0)
-
+        #self.mixer = self.usp_rf_data_converter_0
+        #self.mixer.configure(self)
+        
         # Start streamer and set default transfer length.
         self.streamLength = streamLength
         self.stream.set_nsamp(streamLength)
