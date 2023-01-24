@@ -64,9 +64,10 @@ class AxisDdsCicV2(SocIp):
     MAX_Q = 24
     
     # Sampling frequency and frequency resolution (Hz).
-    FS_DDS = 1000
-    DF_DDS = 1
+    FS_DDS_HZ = 1000
+    FS_DDS_MHZ = FS_DDS_HZ/1e6
     DF_DDS_MHZ = 1
+    DF_DDS_HZ = DF_DDS_MHZ/1e6
     
     # DDS bits.
     B_DDS = 16
@@ -147,10 +148,10 @@ class AxisDdsCicV2(SocIp):
     def set_ddsfreqHz(self, ch_id=0, f=0):
         # Sanity check.
         if (ch_id >= 0 and ch_id < self.NCH_TOTAL):
-            if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
+            if (f >= -self.FS_DDS_HZ/2 and f < self.FS_DDS_HZ/2):
             #if (f >= 0 and f < self.FS_DDS):
                 # Compute register value.
-                ki = int(round(f/self.DF_DDS))
+                ki = int(round(f/self.DF_DDS_HZ))
                 
                 # Write value into hardware.
                 self.addr_nchan_reg = ch_id
@@ -438,9 +439,9 @@ class AxisDdsV2(SocIp):
                  'dds_sync_reg'   : 6}
     
     # Sampling frequency and frequency resolution (Hz).
-    FS_DDS      = 1000
-    DF_DDS      = 1
-    DFI_DDS     = 1
+    FS_DDS_HZ      = 1000 # used to be FS_DDS
+    #DF_DDS      = 1
+    #DFI_DDS     = 1
     
     # DDS bits.
     B_DDS       = 16
@@ -479,10 +480,10 @@ class AxisDdsV2(SocIp):
         # Start DDS.
         self.start()
         
-    def configure(self, fs):
-        fs_hz = fs*1000*1000
-        self.FS_DDS     = fs_hz
-        self.DF_DDS     = self.FS_DDS/2**self.B_DDS
+    def configure(self, fsMhz):
+        fs_hz = fsMhz*1000*1000
+        self.FS_DDS_HZ     = fs_hz
+        self.DF_DDS_HZ     = self.FS_DDS_HZ/2**self.B_DDS
         self.DFI_DDS    = self.MAX_PHI/2**self.B_DDS
 
     def start(self):
@@ -494,7 +495,7 @@ class AxisDdsV2(SocIp):
     def ddscfgHz(self, f=0, fi=0, g=0, ch=0, sel="dds"):
         # Sanity check.
         if (ch >= 0 and ch < self.NCH_TOTAL):
-            if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
+            if (f >= -self.FS_DDS_HZ/2 and f < self.FS_DDS_HZ/2):
                 if (fi >= self.MIN_PHI and fi < self.MAX_PHI): 
                     if (g >= self.MIN_GAIN and g < self.MAX_GAIN):
                         # Compute pinc value.
@@ -524,7 +525,7 @@ class AxisDdsV2(SocIp):
                 else:
                     raise ValueError('phase=%f not contained in [%f,%f)'%(fi,self.MIN_PHI,self.MAX_PHI))
             else:
-                raise ValueError('frequency=%f not contained in [%f,%f)'%(f,0,self.FS_DDS))
+                raise ValueError('frequency=%f not contained in [%f,%f)'%(f,0,self.FS_DDS_HZ))
         else:
             raise ValueError('ch=%d not contained in [%d,%d)'%(ch,0,self.NCH_TOTAL))
             
@@ -543,8 +544,8 @@ class AxisDdsV3(SocIp):
                  'dds_sync_reg'   : 6}
     
     # Sampling frequency and frequency resolution (Hz).
-    FS_DDS      = 1000
-    DF_DDS      = 1
+    FS_DDS_HZ      = 1000 # Used to be FS_DDS
+    DF_DDS_HZ      = 1    # Used to be DF_DDS
     DFI_DDS     = 1
     
     # DDS bits.
@@ -584,10 +585,10 @@ class AxisDdsV3(SocIp):
         # Start DDS
         self.start()
         
-    def configure(self, fs):
-        fs_hz = fs*1000*1000
-        self.FS_DDS     = fs_hz
-        self.DF_DDS     = self.FS_DDS/2**self.B_DDS
+    def configure(self, fsMhz):
+        fs_hz = fsMhz*1000*1000
+        self.FS_DDS_HZ     = fs_hz
+        self.DF_DDS_HZ     = self.FS_DDS_HZ/2**self.B_DDS
         self.DFI_DDS    = self.MAX_PHI/2**self.B_DDS
 
     def start(self):
@@ -599,14 +600,14 @@ class AxisDdsV3(SocIp):
     def ddscfgHz(self, f=0, fi=0, g=0, ch=0, sel="dds"):
         # Sanity check.
         if (ch >= 0 and ch < self.NCH_TOTAL):
-            if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
+            if (f >= -self.FS_DDS_HZ/2 and f < self.FS_DDS_HZ/2):
                 if (fi >= self.MIN_PHI and fi < self.MAX_PHI): 
                     if (g >= self.MIN_GAIN and g < self.MAX_GAIN):
                         #if f != 0:
                         #    print("in AxisDdsV3.ddscfg:  ch,f,fi,g=",ch,f,fi,g)
 
                         # Compute pinc value.
-                        ki = int(round(f/self.DF_DDS))
+                        ki = int(round(f/self.DF_DDS_HZ))
 
                         # Compute phase value.
                         fik = int(round(fi/self.DFI_DDS))
@@ -632,7 +633,7 @@ class AxisDdsV3(SocIp):
                 else:
                     raise ValueError('phase=%f not contained in [%f,%f)'%(fi,self.MIN_PHI,self.MAX_PHI))
             else:
-                raise ValueError('frequency=%f not contained in [%f,%f)'%(f,0,self.FS_DDS))
+                raise ValueError('frequency=%f not contained in [%f,%f)'%(f,0,self.FS_DDS_HZ))
         else:
             raise ValueError('ch=%d not contained in [%d,%d)'%(ch,0,self.NCH_TOTAL))
             
