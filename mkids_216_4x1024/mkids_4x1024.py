@@ -623,7 +623,7 @@ class AxisPfbSynth4x512V1(SocIp):
     def qout(self, value):
         self.qout_reg = value
 
-    def freq2ch(self, f):
+    def freqAbsolute2ch(self, f):
         # f is the absolute desired frequency (taking into consideration fmix).
         
         # Sanity check.
@@ -636,7 +636,18 @@ class AxisPfbSynth4x512V1(SocIp):
         ch = int(np.mod(k,self.N))
 
         return ch
-
+    
+    def freq2ch(self, f):
+        # f is the tone seen by the PFB, from -fs/2 to fs/2, usually fTone-fMixer
+        k = np.round(f/self.fc)
+        #ch = int(np.mod(k,self.N))
+        ch = np.mod(k,self.N)
+        if isinstance(ch, np.ndarray):
+            ch = ch.astype(int)
+        else:
+            ch = int(ch)       
+        return ch
+        
     def ch2freq(self, ch):
         """
         freq = ch*fc for N<N/2
