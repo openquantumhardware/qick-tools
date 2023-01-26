@@ -59,7 +59,7 @@ class Mkids():
         self.nOutCh = self.pfb_out.N
         self.fcOut = self.pfb_out.get_fc()
         self.fbOut = self.pfb_out.get_fb()
-        self.dfDdsMhz = max(self.dds_out.DF_DDS,self.ddscic.DF_DDS)/1e6
+        self.dfDdsMhz = max(self.dds_out.DF_DDS_MHZ,self.ddscic.DF_DDS_MHZ)
         
         # Setup streaming
         self.setStreamLength(streamLength)
@@ -287,14 +287,14 @@ class Mkids():
         for multiOutDds, amplitude, outCh, fi in zip(self.multiOutDdss, self.multiAmplitudes, self.multiOutChs, self.multiFis):
             if verbose:
                 print("setMultiTones:  outCh=%4d f=%+f amplitude=%f "%(outCh, multiOutDds, amplitude))
-            self.dds_out.ddscfg(f=multiOutDds*1e6, fi=np.degrees(fi), g=amplitude, ch=outCh)
+            self.dds_out.ddscfg(f=multiOutDds, fi=np.degrees(fi), g=amplitude, ch=outCh)
         # Prepare for readouts
         self.multiInChs, self.inDdss = self.inFreq2chOffset(self.multiFreqs)
         self.ddscic.dds_outsel(outsel="product")
         for inCh, inDds in zip(self.multiInChs, self.inDdss):       
             if verbose:
                 print("setMultiTones:   inCh=%4d f=%+f"%(inCh, inDds))
-            self.ddscic.set_ddsfreq(inCh, inDds*1e6)
+            self.ddscic.set_ddsfreq(inCh, inDds)
         self.idxs = np.mod(self.multiInChs,8)
         self.setupReadAllMultitones(verbose)
         return
