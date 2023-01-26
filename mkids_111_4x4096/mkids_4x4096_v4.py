@@ -362,11 +362,14 @@ class AxisStreamerV1(SocIp):
 
         return self.buff
 
-    def transfer(self, nt=1):
+    def transfer(self, nt=1, nsamp=None):
         # Data structure:
-        # First dimention: number of dma transfers.
+        # First dimension: number of dma transfers.
         # Second dimension: number of streamer transactions.
         # Third dimension: Number of I + Number of Q + Index (17 samples, 16-bit each).
+        if nsamp is not None:
+            if nsamp != self.nsamp_reg:
+                raise ValueError("nsamp=%d is not equal to self.nsamp_reg=%d"%(nsamp, self.nsamp_reg))
         data = np.zeros((nt,self.nsamp_reg,self.NS_NI))
         # Stash a copy of the 
         self.third = []

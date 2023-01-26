@@ -321,10 +321,10 @@ class Mkids():
             self.chsel.we_reg = 1
             self.chsel.we_reg = 0
         time.sleep(0.01)
-        _ = self.stream.transfer(nt=1)
+        _ = self.stream.transfer(nt=1, nsamp=self.streamLength)
         
     def readAllMultiTones(self, nt=1):
-        packets = self.stream.transfer(nt=nt)
+        packets = self.stream.transfer(nt=nt, nsamp=self.streamLength)
         self.packets = packets # stash this here in case you want to inspect in detail
         data_iq = packets[:,:,:16].reshape((-1,16)).T
         d16 = packets[:,:,16]
