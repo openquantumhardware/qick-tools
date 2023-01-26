@@ -77,7 +77,7 @@ class AxisDdsCicV2(SocIp):
     
     # Sampling frequency and frequency resolution (MHz).
     FS_DDS = 1000
-    DF_DDS = 1
+    DF_DDS_MHZ = 1
     
     # DDS bits.
     B_DDS = 16
@@ -114,7 +114,7 @@ class AxisDdsCicV2(SocIp):
     def configure(self, fs):
         fs_hz = fs
         self.FS_DDS = fs_hz
-        self.DF_DDS = self.FS_DDS/2**self.B_DDS
+        self.DF_DDS_MHZ = self.FS_DDS/2**self.B_DDS
         
     def dds_start(self):
         self.dds_sync_reg = 0
@@ -159,7 +159,7 @@ class AxisDdsCicV2(SocIp):
             raise RuntimeError("invalid DDS freq")
         # Compute register value.
         #TODO: do this frequency matching correctly
-        ki = int(round(f/(self.DF_DDS*2)))*2
+        ki = int(round(f/(self.DF_DDS_MHZ*2)))*2
         
         # Write value into hardware.
         self.addr_nchan_reg = ch_id
@@ -465,7 +465,7 @@ class AxisDdsV3(SocIp):
     
     # Sampling frequency and frequency resolution (Hz).
     FS_DDS      = 1000
-    DF_DDS      = 1
+    DF_DDS_MHZ      = 1
     DFI_DDS     = 1
     
     # DDS bits.
@@ -511,7 +511,7 @@ class AxisDdsV3(SocIp):
     def configure(self, fs_dds):
         # Frequency constants.
         self.FS_DDS     = fs_dds
-        self.DF_DDS     = self.FS_DDS/2**self.B_DDS
+        self.DF_DDS_MHZ     = self.FS_DDS/2**self.B_DDS
         self.DFI_DDS    = self.MAX_PHI/2**self.B_DDS
 
     def start(self):
@@ -553,7 +553,7 @@ class AxisDdsV3(SocIp):
         #    print("in AxisDdsV3.ddscfg:  ch,f,fi,g=",ch,f,fi,g)
 
         # Compute pinc value.
-        ki = int(round(f/self.DF_DDS))
+        ki = int(round(f/self.DF_DDS_MHZ))
 
         # Compute phase value.
         fik = int(round(fi/self.DFI_DDS))
