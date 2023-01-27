@@ -1,11 +1,12 @@
 from pynq import Overlay, allocate
 import xrfdc
 import xrfclk
-from qick.qick import SocIp
+from qick.qick import QickSoc, SocIp
 import matplotlib.pyplot as plt
 import time
 import os
 import numpy as np
+from scipy.interpolate import interp1d
 
 class AxisPfb4x1024V1(SocIp):
     """input PFB
@@ -33,10 +34,31 @@ class AxisPfb4x1024V1(SocIp):
         # Channel bandwidth.
         self.fb = fs/(self.N/2)
 
-    def freq2ch(self,f):
-        k = np.round(f/self.fc)
+    def freq2ch(self, freq):
+        """Compute the correct input PFB channel for a desired frequency.
 
-        return int(np.mod(k+self.N/2,self.N))
+        Parameters
+        ----------
+        f : float or array of float
+            desired frequency, in MHz
+
+        Returns
+        -------
+        int or array of int
+            PFB channel index (0 to N-1)
+        float or array of float
+            residual frequency offset that will need to be corrected using the DDS
+        float or array of float
+            center frequency of the PFB channel, in MHz
+        int or array of int
+            "unwrapped" channel number, for phase correction
+        """
+        if isinstance(freq, list):
+            freq = np.array(freq)
+        fc = self.fc
+        n = self.N
+        ch, remainder = np.divmod(freq+fc/2,fc)
+        return np.int64(ch+n//2)%n, remainder-fc/2, fc*ch, ch
 
     def ch2freq(self,ch):
         if ch >= self.N/2:
@@ -224,41 +246,47 @@ class AxisChSelPfbV2(SocIp):
         self.start_reg = 1
         
     def set(self, ch, debug=False):
+        self.alloff()
+        if isinstance(ch, list):
+            ch = np.array(ch)
         # Sanity check.
-        if debug: print(" in  AxisChSelPfbV2.set:  ch=%d"%ch, end=" ")
-        if ch < 0 or ch >= self.NCH:
+        if debug: print(" in  AxisChSelPfbV2.set:  ch=%s"%ch, end=" ")
+        if ch.min() < 0 or ch.max() >= self.NCH:
             raise RuntimeError("invalid channel")
+
         # Transaction number and bit index.
         [addr,bit] = self.ch2tran(ch) # bit ranges from 0 to 31, there are 4096/32 channels
-        
-        # Data Mask.
-        data = 2**bit
+
+        # we need to set NM 32-bit bitmasks
+        datas = np.zeros(self.NM, dtype=np.uint32)
+        # set all the correct bits to 1
+        np.bitwise_or.at(datas, addr, (1<<bit).astype(np.uint32))
         
         # Write Value.
-        self.addr_reg = addr
-        self.data_reg = data
-        self.we_reg = 1
-        self.we_reg = 0
-        if debug: print(" addr=%2d data=%08X   bit=%2d  done"%(addr, data, bit))
+        for addr, data in enumerate(datas):
+            self.addr_reg = addr
+            self.data_reg = data
+            self.we_reg = 1
+            self.we_reg = 0
+            if debug: print(" addr=%2d data=%08X done"%(addr, data))
 
     def set_single(self, ch, debug=False):
-        self.alloff()
-        self.set(ch, debug)
+        self.set([ch], debug)
             
     def ch2tran(self,ch):
         # Transaction number.
-        ntran = int(np.floor(ch/self.L))
+        ntran = ch//self.L
         
         # Mask Register Address (each is 32-bit).
-        addr = int(np.floor(ntran/32))
+        addr = ntran//32
 
         # Bit.
-        bit = np.mod(ntran,32)
+        bit = ntran%32
         
         return [addr,bit]
     
     def ch2idx(self,ch):
-        return np.mod(ch, self.L)
+        return ch%self.L
 
 class AxisStreamerV1(SocIp):
     # AXIS_Streamer V1 registers.
@@ -429,6 +457,18 @@ class AxisStreamerV1(SocIp):
         data_iq = self.get_all_data(nt=nt, nsamp=nsamp, debug=debug)
         return data_iq[:,2*idx:2*idx+2]
 
+    def get_data_multi(self, idx, nt=1, nsamp=10000, debug=False):
+        # nt: number of dma transfers.
+        # idx: from 0..7, index of channel.
+        #idx_arr = np.outer(2*idx, [1,1])+np.array([0,1])
+        idx_arr = (np.outer(2*idx, [1,1])+np.array([0,1])).flatten()
+
+
+        # Format data.
+        data_iq = self.get_all_data(nt=nt, nsamp=nsamp, debug=debug)
+        return np.moveaxis(data_iq[:,idx_arr].reshape(-1,len(idx),2),1,0)
+    #return data_iq[:,idx_arr].T.reshape(len(idx),2,-1)
+
     def get_all_data(self, nt=1, nsamp=10000, debug=False):
         # nt: number of dma transfers.
         # idx: from 0..7, index of channel.
@@ -576,8 +616,12 @@ class AxisDdsV3(SocIp):
         self.addr_we_reg    = 0
             
     def alloff(self):
+        self.ddscfg(g=0, ch=0)
+        # now we can write those values to all channels
         for ch in np.arange(self.NCH_TOTAL):
-            self.ddscfg(g=0, ch=ch)            
+            self.addr_nchan_reg = ch
+            self.addr_we_reg    = 1
+            self.addr_we_reg    = 0
 
 class AxisPfbSynth4x512V1(SocIp):
     # This is the output PFB
@@ -623,19 +667,34 @@ class AxisPfbSynth4x512V1(SocIp):
     def qout(self, value):
         self.qout_reg = value
 
-    def freq2ch(self, f):
-        # f is the absolute desired frequency (taking into consideration fmix).
-        
-        # Sanity check.
-        if (f < self.FMIX - self.fs/2) or f > (self.FMIX + self.fs/2):
-            raise ValueError('{%s}: frequency should be within [%f,%f] MHz'%(self.__class__.__name__,self.FMIX - self.fs/2,self.FMIX + self.fs/2))
-        f_ = f - self.FMIX
-        k = np.round(f_/self.fc)
+    def freq2ch(self, freq, fmix):
+        """Compute the correct output PFB channel for a desired frequency.
 
-        # mod will always return a non-negative result if N is positive
-        ch = int(np.mod(k,self.N))
+        Parameters
+        ----------
+        f : float or array of float
+            desired frequency, in MHz
 
-        return ch
+        Returns
+        -------
+        int or array of int
+            PFB channel index (0 to N-1)
+        float or array of float
+            residual frequency offset that will need to be corrected using the DDS
+        float or array of float
+            center frequency of the PFB channel, in MHz
+        int or array of int
+            "unwrapped" channel number, for phase correction
+        """
+        if isinstance(freq, list):
+            freq = np.array(freq)
+        fc = self.fc
+        minf = fmix - self.fs/2 - fc/2
+        maxf = fmix + self.fs/2 - fc/2
+        if np.min(freq) < minf or np.max(freq) > maxf:
+            raise ValueError('output PFB: frequency should be within [%f,%f] MHz'%(minf, maxf))
+        ch, remainder = np.divmod(freq-fmix+fc/2,fc)
+        return np.int64(ch)%self.N, remainder-fc/2, fc*ch, ch
 
     def ch2freq(self, ch):
         """
@@ -655,29 +714,14 @@ class AxisPfbSynth4x512V1(SocIp):
     def get_fmix(self):
         return self.FMIX
     
-class TopSoc(Overlay):    
+class TopSoc(QickSoc):
     # Constructor.
-    def __init__(self, bitfile=None, force_init_clks=False,
-                 ignore_version=True,  decimation=2, switchSrc="pfbcic", 
+    def __init__(self, bitfile=None,
+                 decimation=2, switchSrc="pfbcic", 
                  streamLength=10000, **kwargs):
         # Load overlay (don't download to PL).
-        Overlay.__init__(self, bitfile, ignore_version=ignore_version, download=False, **kwargs)
+        super().__init__(bitfile, no_tproc=True, **kwargs)
         
-        # Configuration dictionary.
-        self.cfg = {}
-        self.cfg['board'] = os.environ["BOARD"]
-        self.cfg['refclk_freq'] = 245.76
-
-        # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
-        self.list_rf_blocks(self.ip_dict['usp_rf_data_converter_0']['parameters'])
-        
-        # Configure PLLs if requested, or if any ADC/DAC is not locked.
-        if force_init_clks:
-            self.set_all_clks()
-            self.download()
-        else:
-            self.download()        
-
         # Mixer.
         self.mixer = self.usp_rf_data_converter_0
         self.mixer.configure(self)
@@ -719,72 +763,169 @@ class TopSoc(Overlay):
         self.stream.transfer_raw(nsamp=10000, first=True)
         self.chsel.alloff()
 
-    def list_rf_blocks(self, rf_config):
+        ####################
+        ### Calibrations ###
+        ####################
+        # output gain vs. DDS offset
+        output_freqs, output_gains = np.load("output_gain.npy")
+        # normalize to the minimum gain in the working band (which is +/- fb/2)
+        # we're going to divide the output gain by this function, so we want the function to be always >=1
+        # (otherwise we might exceed the output range)
+        mingain = output_gains[:(len(output_gains)+1)//2].min()
+        self.output_gain = interp1d(output_freqs, output_gains/mingain)
+
+        # output polarity vs. PFB channel
+        self.output_signs = np.load("output_sign.npy")
+
+        # input gain vs. DDS offset
+        self.input_gain = interp1d(*np.load("input_gain.npy"))
+
+        self.PHASE_STEP_OUTPUT = -1.82216429
+        self.PHASE_STEP_INPUT = 0.0524290536
+        #self.PHASE_SLOPE = -4.41828551
+        self.PHASE_SLOPE = -4.5
+
+        self.DF = self.dds_out.DF_DDS
+
+    def round_freq(self, f): # in MHz
+        return np.round(f/self.DF)*self.DF
+
+    def set_mixer(self, fmix): # fmix in MHz
+        # Set mixer frequency.
+        self.pfb_out.set_fmix(fmix)
+        return self.pfb_out.get_fmix()
+
+    def set_outputs(self, freqs, gains, equalize=True): # freqs in MHz
+        # try to convert to float; if that fails, assume it's a list of floats
+        try:
+            gain_list = [float(gains)]*len(freqs)
+        except TypeError:
+            gain_list = gains
+        assert len(freqs)==len(gain_list)
+        
+        # All channels off.
+        self.dds_out.alloff()
+        pfb_chs, dds_freqs, _, unwrapped_chs = self.pfb_out.freq2ch(freqs, self.pfb_out.get_fmix())
+        if len(set(pfb_chs)) != len(pfb_chs):
+            raise RuntimeError("Output tones map to PFB channels %s, which are not unique"%(str(pfb_chs)))
+        
+        for ch, fdds, gain, unwrapped_ch in zip(pfb_chs, dds_freqs, gain_list, unwrapped_chs):
+            if equalize:
+                equalized_gain = gain * self.output_signs[ch] / self.output_gain(np.abs(fdds)/(self.dds_out.FS_DDS))
+                phase = np.rad2deg(-self.PHASE_STEP_OUTPUT*unwrapped_ch)%360
+            else:
+                equalized_gain = gain
+                phase = 0
+            self.dds_out.ddscfg(ch=ch, f=fdds, g=equalized_gain, fi=phase)
+            
+        # Set the PFB quantization, which sets the PFB dynamic range.
+        # 0 gives you max output power, larger values give you finer control
+        self.pfb_out.qout(0)
+
+    def set_inputs(self, freqs, decimation, downconvert):
+        if isinstance(freqs, list):
+            freqs = np.array(freqs)
+        nfreqs = len(freqs)
+
+        # before we do anything, calculate channel mappings and check for collisions
+        K, dds_freq, pfb_freq, ch = self.pfb_in.freq2ch(freqs)
+        if len(set(K)) < nfreqs:
+            raise RuntimeError("input PFB channels are not unique: %s"%(K))
+
+        streamer_ch = self.chsel.ch2idx(K)
+        if len(set(streamer_ch)) < nfreqs:
+            raise RuntimeError("streamer channels are not unique: %s"%(streamer_ch))
+        
+        # Set the PFB quantization, which sets the PFB dynamic range.
+        # this sets how many of the least significant bits are truncated, or something like that
+        # larger values mean a given power will get converted to a smaller number of arbitrary units
+        # the appropriate value depends on the signal strength
+        # if you make this too small, your signal may overflow the range and you will see weird stuff:
+        #     periodic sawtooth-y waveforms in the IQ data, lots of spurious spikes in the frequency spectrum
+        # if you make this too big, your signal-to-noise ratio suffers (eventually your IQ values are all zero)
+        # Values >=12 seem to be equivalent to 0
+        self.pfb_in.qout(7)
+        
+        # Set decimation value.
+        # This also automatically sets the CIC quantization.
+        self.ddscic.decimation(value=decimation)
+
+        # Channel's sampling frequency = bandwidth/decimation
+        fs = self.pfb_in.get_fb()/self.ddscic.get_decimate()
+
+        if downconvert:
+            # Use DDS.
+            self.ddscic.dds_outsel(outsel="product")
+            # Set DDS frequency.
+            for i in range(nfreqs):
+                self.ddscic.set_ddsfreq(ch_id=K[i], f=dds_freq[i])
+            # need to correct by 1.0 if in "product" mode?
+            offset = np.full_like(K, 1.0)
+            fcenter = pfb_freq+dds_freq
+        else:
+            # By-pass DDS product.
+            self.ddscic.dds_outsel(outsel="input")
+            # need to correct offset, which depends on channel
+            #offset = 1.0 if K%2==0 else 0.5
+            offset = 1.0 - 0.5*(K%2)
+            fcenter = pfb_freq
+
+        # Un-mask channels.
+        self.chsel.set(K)
+
+        self.input_config = {}
+        self.input_config['fs'] = fs
+        self.input_config['pfb_ch'] = K
+        self.input_config['streamer_ch'] = streamer_ch
+        self.input_config['dds_freq'] = dds_freq
+        self.input_config['center_freq'] = fcenter
+
+        self.input_config['offset'] = offset
+        gain = self.input_gain(np.abs(dds_freq/self.pfb_in.fb))
+        phase = (self.PHASE_SLOPE*freqs + self.PHASE_STEP_INPUT*ch)
+        self.input_config['correction'] = np.exp(-1j*phase)/gain
+
+    def measure(self, freqs, gain, decimation=2, downconvert=True, truncate=200, equalize=True):
+        self.set_outputs(freqs, gain, equalize=equalize)
+        self.set_inputs(freqs, decimation, downconvert)
+        return self.read(truncate=truncate, equalize=equalize)
+
+    def read(self, truncate=200, equalize=True, average=True, nt=1, nsamp=10000):
+        # nsamp * number of PFB channels * decimation / ADC sampling freq
+        # example: 1e4*1024*250/2457.6e6 = ~1 sec
+        streamer_ch = self.input_config['streamer_ch']
+        offset = self.input_config['offset']
+        correction = self.input_config['correction']
+
+        # Transfer data.
+        x_buf = self.stream.get_data_multi(idx=streamer_ch, nt=nt, nsamp=nsamp)
+        if average:
+            results = x_buf[:,truncate:].mean(axis=1)
+            results += offset[:, np.newaxis]
+            results_complex = results.dot([1, 1j])
+            if equalize:
+                results_complex *= correction
+            return results_complex
+        else:
+            return x_buf[:,truncate:] + offset[np.newaxis, :, np.newaxis]
+
+    def calib_phase(self, freqs, results_complex, dry_run=False):
+        """Adjust the phase calibration using data from a frequency sweep.
+
+        Parameters
+        ----------
+        freqs : array of float
+            frequencies, in MHz
+        results_complex : array of complex float
+            IQ values
         """
-        Lists the enabled ADCs and DACs and get the sampling frequencies.
-        XRFdc_CheckBlockEnabled in xrfdc_ap.c is not accessible from the Python interface to the XRFdc driver.
-        This re-implements that functionality.
-        """
+        a = np.vstack([freqs, np.ones_like(freqs)]).T
+        phase_correction = np.linalg.lstsq(a, np.unwrap(np.angle(results_complex)), rcond=None)[0][0]
+        print("adjusting phase slope by %.4f rad/MHz"%(phase_correction))
+        if dry_run:
+            print("dry run, keeping value of %.4f rad/MHz"%(self.PHASE_SLOPE))
+        else:
+            self.PHASE_SLOPE += phase_correction
+            print("old value %.4f rad/MHz, new value %.4f rad/MHz"%(self.PHASE_SLOPE, self.PHASE_SLOPE+phase_correction))
 
-        hs_adc = rf_config['C_High_Speed_ADC']=='1'
-
-        self.dac_tiles = []
-        self.adc_tiles = []
-        dac_fabric_freqs = []
-        adc_fabric_freqs = []
-        refclk_freqs = []
-        self.dacs = {}
-        self.adcs = {}
-
-        for iTile in range(4):
-            if rf_config['C_DAC%d_Enable'%(iTile)]!='1':
-                continue
-            self.dac_tiles.append(iTile)
-            f_fabric = float(rf_config['C_DAC%d_Fabric_Freq'%(iTile)])
-            f_refclk = float(rf_config['C_DAC%d_Refclk_Freq'%(iTile)])
-            dac_fabric_freqs.append(f_fabric)
-            refclk_freqs.append(f_refclk)
-            fs = float(rf_config['C_DAC%d_Sampling_Rate'%(iTile)])*1000
-            for iBlock in range(4):
-                if rf_config['C_DAC_Slice%d%d_Enable'%(iTile,iBlock)]!='true':
-                    continue
-                self.dacs["%d%d"%(iTile,iBlock)] = {'fs':fs,
-                                                    'f_fabric':f_fabric,
-                                                    'tile':iTile,
-                                                    'block':iBlock}
-
-        for iTile in range(4):
-            if rf_config['C_ADC%d_Enable'%(iTile)]!='1':
-                continue
-            self.adc_tiles.append(iTile)
-            f_fabric = float(rf_config['C_ADC%d_Fabric_Freq'%(iTile)])
-            f_refclk = float(rf_config['C_ADC%d_Refclk_Freq'%(iTile)])
-            adc_fabric_freqs.append(f_fabric)
-            refclk_freqs.append(f_refclk)
-            fs = float(rf_config['C_ADC%d_Sampling_Rate'%(iTile)])*1000
-            #for iBlock,block in enumerate(tile.blocks):
-            for iBlock in range(4):
-                if hs_adc:
-                    if iBlock>=2 or rf_config['C_ADC_Slice%d%d_Enable'%(iTile,2*iBlock)]!='true':
-                        continue
-                else:
-                    if rf_config['C_ADC_Slice%d%d_Enable'%(iTile,iBlock)]!='true':
-                        continue
-                self.adcs["%d%d"%(iTile,iBlock)] = {'fs':fs,
-                                                    'f_fabric':f_fabric,
-                                                    'tile':iTile,
-                                                    'block':iBlock}
-
-    def set_all_clks(self):
-        """
-        Resets all the board clocks
-        """
-        if self.cfg['board']=='ZCU111':
-            print("resetting clocks:",self.cfg['refclk_freq'])
-            xrfclk.set_all_ref_clks(self.cfg['refclk_freq'])
-        elif self.cfg['board']=='ZCU216':
-            lmk_freq = self.cfg['refclk_freq']
-            lmx_freq = self.cfg['refclk_freq']*2
-            print("resetting clocks:",lmk_freq, lmx_freq)
-            xrfclk.set_ref_clks(lmk_freq=lmk_freq, lmx_freq=lmx_freq)
 
