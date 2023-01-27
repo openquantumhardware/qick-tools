@@ -7,6 +7,7 @@ import time
 import os
 import numpy as np
 from scipy.interpolate import interp1d
+from pathlib import Path
 
 class AxisPfb4x1024V1(SocIp):
     """input PFB
@@ -729,8 +730,16 @@ class TopSoc(QickSoc):
     def __init__(self, bitfile=None,
                  decimation=2, switchSrc="pfbcic", 
                  streamLength=10000, **kwargs):
-        # Load overlay (don't download to PL).
-        super().__init__(bitfile, no_tproc=True, **kwargs)
+        
+        self.board = os.environ["BOARD"]
+        if self.board == 'ZCU111':
+            bitfile = "../mkids_216_4x1024/mkids_4x1024.bit"
+        elif self.board == 'ZCU216':
+            temp = str(Path(Path(__file__).parent.parent,"mkids_216_4x1024"))
+            bitFileName = temp+'/mkids_4x1024.bit'
+            self.adcChannel = '20'
+            self.dacChannel = '20'
+        super().__init__(bitFileName, no_tproc=True, **kwargs)
         
         # Mixer.
         self.mixer = self.usp_rf_data_converter_0
@@ -744,7 +753,7 @@ class TopSoc(QickSoc):
         #################
         # PFB for Analysis.
         self.pfb_in = self.axis_pfb_4x1024_v1_0        
-        self.pfb_in.configure(self.adcs['20']['fs']/2)
+        self.pfb_in.configure(self.adcs[self.adcChannel]['fs']/2)
         
         # DDS + CIC block.
         self.ddscic = self.axis_ddscic_v2_0
@@ -762,7 +771,7 @@ class TopSoc(QickSoc):
         #################
         # PFB with 512 Channels for Synthesis.
         self.pfb_out = self.axis_pfbsynth_4x512_0
-        self.pfb_out.configure(self.dacs['20']['fs']/4, self.mixer, '20')
+        self.pfb_out.configure(self.dacs[self.dacChannel]['fs']/4, self.mixer, self.dacChannel)
         
         # DDS with 512 Channels for Synthesis.
         self.dds_out = self.axis_dds_v3_0
@@ -777,19 +786,28 @@ class TopSoc(QickSoc):
         ### Calibrations ###
         ####################
         # output gain vs. DDS offset
-        output_freqs, output_gains = np.load("output_gain.npy")
         # normalize to the minimum gain in the working band (which is +/- fb/2)
         # we're going to divide the output gain by this function, so we want the function to be always >=1
         # (otherwise we might exceed the output range)
-        mingain = output_gains[:(len(output_gains)+1)//2].min()
-        self.output_gain = interp1d(output_freqs, output_gains/mingain)
-
+        try:
+            output_freqs, output_gains = np.load("output_gain.npy")
+            mingain = output_gains[:(len(output_gains)+1)//2].min()
+            self.output_gain = interp1d(output_freqs, output_gains/mingain)
+        except FileNotFoundError:
+            self.output_gain = None
+            
         # output polarity vs. PFB channel
-        self.output_signs = np.load("output_sign.npy")
-
+        try:
+            self.output_signs = np.load("output_sign.npy")
+        except FileNotFoundError:
+            self.output_signs = None
+            
         # input gain vs. DDS offset
-        self.input_gain = interp1d(*np.load("input_gain.npy"))
-
+        try:
+            self.input_gain = interp1d(*np.load("input_gain.npy"))
+        except FileNotFoundError:
+            self.input_gain = None
+            
         self.PHASE_STEP_OUTPUT = -1.82216429
         self.PHASE_STEP_INPUT = 0.0524290536
         #self.PHASE_SLOPE = -4.41828551
@@ -832,7 +850,7 @@ class TopSoc(QickSoc):
         # 0 gives you max output power, larger values give you finer control
         self.pfb_out.qout(0)
 
-    def set_inputs(self, freqs, decimation, downconvert):
+    def set_inputs(self, freqs, decimation, downconvert, equalize=True):
         if isinstance(freqs, list):
             freqs = np.array(freqs)
         nfreqs = len(freqs)
@@ -894,13 +912,16 @@ class TopSoc(QickSoc):
         self.input_config['stream_idx'] = stream_idx
 
         self.input_config['offset'] = offset
-        gain = self.input_gain(np.abs(dds_freq/self.pfb_in.fb))
+        if equalize:
+            gain = self.input_gain(np.abs(dds_freq/self.pfb_in.fb))
+        else:
+            gain = 1
         phase = (self.PHASE_SLOPE*freqs + self.PHASE_STEP_INPUT*ch)
         self.input_config['correction'] = np.exp(-1j*phase)/gain
 
     def measure(self, freqs, gain, decimation=2, downconvert=True, truncate=200, equalize=True, average=True):
         self.set_outputs(freqs, gain, equalize=equalize)
-        self.set_inputs(freqs, decimation, downconvert)
+        self.set_inputs(freqs, decimation, downconvert, equalize=equalize)
         return self.read(truncate=truncate, equalize=equalize, average=average)
 
     def read(self, truncate=200, equalize=True, average=True, nt=1, nsamp=10000):
