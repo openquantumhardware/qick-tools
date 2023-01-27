@@ -3,8 +3,7 @@ import xrfdc
 import xrfclk
 from qick.qick import QickSoc, SocIp
 import matplotlib.pyplot as plt
-import time
-import os
+import os,sys,time
 import numpy as np
 from scipy.interpolate import interp1d
 from pathlib import Path
@@ -892,8 +891,21 @@ class TopSoc(QickSoc):
         #self.PHASE_SLOPE = -4.41828551
         self.PHASE_SLOPE = -4.5
 
+        # Note:  perhaps need the max of input and output
         self.DF = self.dds_out.DF_DDS
 
+        # Useful constants
+        self.nInCh = self.pfb_in.N
+        self.fsIn = self.adcs[self.adcChannel]['fs']
+        self.fbIn = self.pfb_in.get_fb()
+        self.fcIn = self.pfb_in.get_fc()
+
+        self.nOutCh = self.pfb_out.N
+        self.fsOut = self.pfb_out.fs
+        self.fbOut = self.pfb_out.get_fb()
+        self.fcOut = self.pfb_out.get_fc()
+
+        self.dfDdsMhz = self.DF
     def round_freq(self, f): # in MHz
         return np.round(f/self.DF)*self.DF
 
@@ -1045,4 +1057,20 @@ class TopSoc(QickSoc):
             self.PHASE_SLOPE += phase_correction
             print("old value %.4f rad/MHz, new value %.4f rad/MHz"%(self.PHASE_SLOPE, self.PHASE_SLOPE+phase_correction))
 
+    def info(self, stream=sys.stdout):
+        print("Board model: %s"%self.board, file=stream)
+        print("Input:", file=stream)
+        print("         number of input channels: %7d"%self.nInCh)
+        print("         input sampling frequency: %7.2f MHz"%self.fsIn)
+        print("  bandwidth of each input channel: %7.2f MHz"%self.fbIn)
+        print("   spacing between input channels: %7.2f MHz"%self.fcIn)
+        print("            total input bandwidth: %7.2f MHz"%(self.nInCh*self.fcIn))
+        print("Output:", file=stream)
+        print("        number of output channels: %7d"%self.nOutCh)
+        print("        output sampling frequency: %7.2f MHz"%self.fsOut)
+        print(" bandwidth of each output channel: %7.2f MHz"%self.fbOut)
+        print("  spacing between output channels: %7.2f MHz"%self.fcOut)
+        print("           total output bandwidth: %7.2f MHz"%(self.nOutCh*self.fcOut))
 
+        print("")
+        print("      frequency quantization size: %f Hz"%(1e6*self.dfDdsMhz))
