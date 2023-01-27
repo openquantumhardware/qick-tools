@@ -255,7 +255,12 @@ class AxisChSelPfbV2(SocIp):
             raise RuntimeError("invalid channel")
 
         # Transaction number and bit index.
-        [addr,bit] = self.ch2tran(ch) # bit ranges from 0 to 31, there are 4096/32 channels
+        ntran, addr, bit = self.ch2tran(ch) # bit ranges from 0 to 31, there are 4096/32 channels
+
+        # The streamer will loop through the transactions we select.
+        # We need to figure out which channels are going to appear in which transactions.
+        unique_ntran = sorted(set(ntran))
+        tran_index = np.array([unique_ntran.index(i) for i in ntran])
 
         # we need to set NM 32-bit bitmasks
         datas = np.zeros(self.NM, dtype=np.uint32)
@@ -270,6 +275,8 @@ class AxisChSelPfbV2(SocIp):
             self.we_reg = 0
             if debug: print(" addr=%2d data=%08X done"%(addr, data))
 
+        return len(unique_ntran), tran_index
+
     def set_single(self, ch, debug=False):
         self.set([ch], debug)
             
@@ -283,10 +290,13 @@ class AxisChSelPfbV2(SocIp):
         # Bit.
         bit = ntran%32
         
-        return [addr,bit]
+        return ntran, addr, bit
     
     def ch2idx(self,ch):
-        return ch%self.L
+        streamer_ch = ch%self.L
+        unique_ch = sorted(set(streamer_ch))
+        ch_index = np.array([unique_ch.index(i) for i in streamer_ch])
+        return np.array(unique_ch), ch_index
 
 class AxisStreamerV1(SocIp):
     # AXIS_Streamer V1 registers.
@@ -832,9 +842,9 @@ class TopSoc(QickSoc):
         if len(set(K)) < nfreqs:
             raise RuntimeError("input PFB channels are not unique: %s"%(K))
 
-        streamer_ch = self.chsel.ch2idx(K)
-        if len(set(streamer_ch)) < nfreqs:
-            raise RuntimeError("streamer channels are not unique: %s"%(streamer_ch))
+        streams, stream_idx = self.chsel.ch2idx(K)
+        #if len(set(streamer_ch)) < nfreqs:
+        #    raise RuntimeError("streamer channels are not unique: %s"%(streamer_ch))
         
         # Set the PFB quantization, which sets the PFB dynamic range.
         # this sets how many of the least significant bits are truncated, or something like that
@@ -871,43 +881,50 @@ class TopSoc(QickSoc):
             fcenter = pfb_freq
 
         # Un-mask channels.
-        self.chsel.set(K)
+        num_tran, tran_idx = self.chsel.set(K)
 
         self.input_config = {}
         self.input_config['fs'] = fs
         self.input_config['pfb_ch'] = K
-        self.input_config['streamer_ch'] = streamer_ch
         self.input_config['dds_freq'] = dds_freq
         self.input_config['center_freq'] = fcenter
+        self.input_config['num_tran'] = num_tran
+        self.input_config['tran_idx'] = tran_idx
+        self.input_config['streams'] = streams
+        self.input_config['stream_idx'] = stream_idx
 
         self.input_config['offset'] = offset
         gain = self.input_gain(np.abs(dds_freq/self.pfb_in.fb))
         phase = (self.PHASE_SLOPE*freqs + self.PHASE_STEP_INPUT*ch)
         self.input_config['correction'] = np.exp(-1j*phase)/gain
 
-    def measure(self, freqs, gain, decimation=2, downconvert=True, truncate=200, equalize=True):
+    def measure(self, freqs, gain, decimation=2, downconvert=True, truncate=200, equalize=True, average=True):
         self.set_outputs(freqs, gain, equalize=equalize)
         self.set_inputs(freqs, decimation, downconvert)
-        return self.read(truncate=truncate, equalize=equalize)
+        return self.read(truncate=truncate, equalize=equalize, average=average)
 
     def read(self, truncate=200, equalize=True, average=True, nt=1, nsamp=10000):
         # nsamp * number of PFB channels * decimation / ADC sampling freq
         # example: 1e4*1024*250/2457.6e6 = ~1 sec
-        streamer_ch = self.input_config['streamer_ch']
+        num_tran = self.input_config['num_tran']
+        tran_idx = self.input_config['tran_idx']
+        streams = self.input_config['streams']
+        stream_idx = self.input_config['stream_idx']
         offset = self.input_config['offset']
         correction = self.input_config['correction']
 
         # Transfer data.
-        x_buf = self.stream.get_data_multi(idx=streamer_ch, nt=nt, nsamp=nsamp)
+        x_buf = self.stream.get_data_multi(idx=streams, nt=nt, nsamp=nsamp*num_tran)[:,truncate*num_tran:]
+        x_buf = x_buf.reshape(len(streams), -1, num_tran, 2)[stream_idx, :, tran_idx, :]
         if average:
-            results = x_buf[:,truncate:].mean(axis=1)
+            results = x_buf.mean(axis=1)
             results += offset[:, np.newaxis]
             results_complex = results.dot([1, 1j])
             if equalize:
                 results_complex *= correction
             return results_complex
         else:
-            return x_buf[:,truncate:] + offset[np.newaxis, :, np.newaxis]
+            return x_buf + offset[:, np.newaxis, np.newaxis]
 
     def calib_phase(self, freqs, results_complex, dry_run=False):
         """Adjust the phase calibration using data from a frequency sweep.
