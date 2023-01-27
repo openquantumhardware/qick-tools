@@ -9,6 +9,76 @@ import numpy as np
 from scipy.interpolate import interp1d
 from pathlib import Path
 
+class AxisPfb4x4096V1(SocIp):
+    bindto = ['user.org:user:axis_pfb_4x4096_v1:1.0']
+    REGISTERS = {'qout_reg' : 0}
+    
+    # Generic parameters.
+    N = 4096
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Default registers.
+        self.qout_reg = 0
+
+    def configure(self, fs):
+        # Sampling frequency at input.
+        self.fs = fs
+
+        # Channel centers.
+        self.fc = fs/self.N
+
+        # Channel bandwidth.
+        self.fb = fs/(self.N/2)
+        
+    def freq2ch(self, freq):
+        """Compute the correct input PFB channel for a desired frequency.
+
+        Parameters
+        ----------
+        f : float or array of float
+            desired frequency, in MHz
+
+        Returns
+        -------
+        int or array of int
+            PFB channel index (0 to N-1)
+        float or array of float
+            residual frequency offset that will need to be corrected using the DDS
+        float or array of float
+            center frequency of the PFB channel, in MHz
+        int or array of int
+            "unwrapped" channel number, for phase correction
+        """
+        if isinstance(freq, list):
+            freq = np.array(freq)
+        fc = self.fc
+        n = self.N
+        ch, remainder = np.divmod(freq+fc/2,fc)
+        return np.int64(ch+n//2)%n, remainder-fc/2, fc*ch, ch
+
+    def ch2freq(self,ch):
+        if ch >= self.N/2:
+            return ch*self.fc - self.fs/2
+        else:
+            return ch*self.fc + self.fs/2
+
+
+    def get_fs(self):
+        return self.fs
+
+    def get_fc(self):
+        return self.fc
+
+    def get_fb(self):
+        return self.fb
+        
+    def qout(self, qout):
+        self.qout_reg = qout
+        
+
 class AxisPfb4x1024V1(SocIp):
     """input PFB
     """
@@ -733,14 +803,24 @@ class TopSoc(QickSoc):
         
         self.board = os.environ["BOARD"]
         if self.board == 'ZCU111':
-            bitfile = "../mkids_216_4x1024/mkids_4x1024.bit"
+            bitFileName = str(Path(Path(__file__).parent.parent,"mkids_111_4x4096","mkids_4x4096_v4.bit"))
+            self.adcChannel = '00'
+            self.dacChannel = '12'
+
+            #bitfile = "../mkids_216_4x1024/mkids_4x1024.bit"
         elif self.board == 'ZCU216':
             temp = str(Path(Path(__file__).parent.parent,"mkids_216_4x1024"))
             bitFileName = temp+'/mkids_4x1024.bit'
             self.adcChannel = '20'
             self.dacChannel = '20'
+
         super().__init__(bitFileName, no_tproc=True, **kwargs)
-        
+     
+        if self.board == 'ZCU111':
+            self.pfb_in = self.axis_pfb_4x4096_v1_0        
+        elif self.board == 'ZCU216':
+            self.pfb_in = self.axis_pfb_4x1024_v1_0        
+
         # Mixer.
         self.mixer = self.usp_rf_data_converter_0
         self.mixer.configure(self)
@@ -752,7 +832,6 @@ class TopSoc(QickSoc):
         ### ADC Chain ###
         #################
         # PFB for Analysis.
-        self.pfb_in = self.axis_pfb_4x1024_v1_0        
         self.pfb_in.configure(self.adcs[self.adcChannel]['fs']/2)
         
         # DDS + CIC block.
