@@ -1,3 +1,4 @@
 ### mkids
 
-Software to use mkids firmware on all platforms
+Software to use mkids firmware on all platforms.
+
