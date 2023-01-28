@@ -913,6 +913,9 @@ class TopSoc(QickSoc):
         # Set mixer frequency.
         self.pfb_out.set_fmix(fmix)
         return self.pfb_out.get_fmix()
+    
+    def get_mixer(self):
+        return self.pfb_out.get_fmix()
 
     def set_outputs(self, freqs, gains, equalize=True): # freqs in MHz
         # try to convert to float; if that fails, assume it's a list of floats
