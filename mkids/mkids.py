@@ -1077,3 +1077,134 @@ class TopSoc(QickSoc):
 
         print("")
         print("      frequency quantization size: %f Hz"%(1e6*self.dfDdsMhz))
+
+    def inFreq2ch(self, frequency):
+        """
+        Return the input PFB bin that contains the frequency
+
+        Parameters
+        ----------
+        frequency : double
+            in MHz
+
+        Returns
+        -------
+            ch : int
+                the PFB channel
+        """  
+        N = self.pfb_in.N
+        fc = self.fsIn/N
+        k =np.round(frequency/fc)
+        ch = (np.mod(k+N/2, N)).astype(int)
+        return ch
+
+
+    def inFreq2chOffset(self, frequency):
+        """
+        Return the input PFB bin that contains the frequency, along with the offset from the center
+
+
+        Parameters
+        ----------
+        frequency : double
+            in MHz
+            
+        Returns
+        -------
+            tuple (ch,offset) 
+            
+            ch : int
+                the PFB channel
+            offset : offset
+                offset from the center frequency, in MHz
+        """  
+
+        N = self.pfb_in.N
+        fc = self.fsIn/N
+        k = np.round(frequency/fc)
+        ch = (np.mod(k+N/2, N)).astype(int)
+        fCenter = k*fc
+        offset = frequency-fCenter
+        return ch,offset
+    
+    def inCh2FreqCenter(self, ch):
+        """
+        Converts from input channel number to the frequency at the center of that channel
+
+        Parameters
+        ----------
+        ch : int
+            The PFB channel
+
+        Returns
+        -------
+        fCenter : double
+            frequency at the center of the channel (MHz)
+        """
+   
+        fCenter = np.mod(ch*self.fsIn/self.pfb_in.N + self.fsIn/2, self.fsIn)
+        return fCenter
+    
+    def outFreq2ch(self, frequency):
+        """
+        Return the output PFB bin that contains the frequency
+
+        Parameters
+        ----------
+        frequency : double
+            in MHz
+
+        Returns
+        -------
+            ch : int
+                the PFB channel
+        """  
+        f = frequency - self.fMixerQuantized
+        ch = self.pfb_out.freq2ch(f)
+        return ch
+    
+    def outFreq2chOffset(self, frequency):
+        """
+        Return the output PFB bin that contains the frequency, along with the offset from the center
+
+
+        Parameters
+        ----------
+        frequency : double
+            in MHz
+            
+        Returns
+        -------
+            tuple (ch,offset) 
+            
+            ch : int
+                the PFB channel
+            offset : offset
+                offset from the center frequency, in MHz
+        """  
+
+        f = frequency - self.fMixerQuantized
+        ch = self.pfb_out.freq2ch(f)
+        fOutCenters = self.outCh2FreqCenter(ch)
+        offsets = f - fOutCenters + self.fMixerQuantized
+        return ch,offsets
+ 
+    
+    def outCh2FreqCenter(self, ch):
+        """
+        Converts from output channel number to the frequency at the center of that channel
+
+        Parameters
+        ----------
+        ch : int
+            The PFB channel
+
+        Returns
+        -------
+        fCenter : double
+            frequency at the center of the channel (MHz)
+        """
+        f = self.pfb_out.ch2freq(ch)
+        frequency = f + self.fMixerQuantized
+        return frequency
+
