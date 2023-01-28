@@ -72,7 +72,39 @@ class Scan():
             results_complex = results.dot([1, 1j])
             return results_complex
         else:
-            return x_buf + offset[:, np.newaxis, np.newaxis]
-
+            return (x_buf + offset[:, np.newaxis, np.newaxis]).dot([1,1j])
         
-                                                            
+    def calibrate(self, xs, inputPhase=True):
+        for i,toneFi in enumerate(self.toneFis):
+            if inputPhase:
+                xs[i] = np.abs(xs[i])*np.exp(1j * (np.angle(xs[i])-toneFi))
+ 
+
+    def fscan(self, freqs, amps, fis, 
+              bandwidth, nf, decimation, nt, truncate, 
+              pfbOutQout=0, verbose=False):
+        dfs = np.linspace(-bandwidth/2, bandwidth/2, num=nf)
+        xs = np.zeros((nf, len(freqs)), dtype=complex)
+        for i,df in enumerate(dfs):
+            self.setTones(df+freqs, amps, fis)
+            self.prepRead(decimation)
+            x = self.read(truncate=truncate, average=True)
+            self.calibrate(x)
+            xs[i] =  x  
+        return {
+                "fMixer": self.soc.get_mixer(),
+                "freqs":freqs,
+                "amps": amps,
+                "dfs": dfs,
+                "xs": xs
+               }
+    
+def fscanPlot(fscan, iTone):
+    dfs = fscan["dfs"]
+    xs = fscan['xs'][:,iTone]
+    fig,ax = plt.subplots(2,1,sharex=True)
+    ax[0].plot(dfs, np.abs(xs), '-o')
+    ax[0].set_ylabel("amplitude [ADUs]")
+    ax[1].plot(dfs, np.angle(xs), '-o')
+    ax[1].set_ylabel("phase [Radians]")
+    ax[1].set_xlabel("Frequency-%f [MHz]"%fscan["freqs"][iTone])
