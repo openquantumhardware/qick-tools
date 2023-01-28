@@ -901,8 +901,8 @@ class TopSoc(QickSoc):
         #self.PHASE_SLOPE = -4.41828551
         self.PHASE_SLOPE = -4.5
 
-        # Note:  perhaps need the max of input and output
-        self.DF = self.dds_out.DF_DDS
+        # eed the max of input and output
+        self.DF = max(self.dds_out.DF_DDS,self.ddscic.DF_DDS)
 
         # Useful constants
         self.nInCh = self.pfb_in.N
@@ -915,7 +915,7 @@ class TopSoc(QickSoc):
         self.fbOut = self.pfb_out.get_fb()
         self.fcOut = self.pfb_out.get_fc()
 
-        self.dfDdsMhz = self.DF
+
     def round_freq(self, f): # in MHz
         return np.round(f/self.DF)*self.DF
 
@@ -927,7 +927,8 @@ class TopSoc(QickSoc):
     def get_mixer(self):
         return self.pfb_out.get_fmix()
 
-    def set_outputs(self, freqs, gains, equalize=True): # freqs in MHz
+    def set_outputs(self, freqs, gains, equalize=True): 
+        # freqs in MHz, gain 1 for full range, fi in radians
         # try to convert to float; if that fails, assume it's a list of floats
         try:
             gain_list = [float(gains)]*len(freqs)
@@ -1075,18 +1076,21 @@ class TopSoc(QickSoc):
         print("Input:", file=stream)
         print("         number of input channels: %7d"%self.nInCh)
         print("         input sampling frequency: %7.2f MHz"%self.fsIn)
+        print("             input DDS resolution: %7.4f Hz"%(1e6*self.ddscic.DF_DDS))
         print("  bandwidth of each input channel: %7.2f MHz"%self.fbIn)
         print("   spacing between input channels: %7.2f MHz"%self.fcIn)
         print("            total input bandwidth: %7.2f MHz"%(self.nInCh*self.fcIn))
         print("Output:", file=stream)
         print("        number of output channels: %7d"%self.nOutCh)
         print("        output sampling frequency: %7.2f MHz"%self.fsOut)
+        print("            output DDS resolution: %7.4f Hz"%(1e6*self.dds_out.DF_DDS))
         print(" bandwidth of each output channel: %7.2f MHz"%self.fbOut)
         print("  spacing between output channels: %7.2f MHz"%self.fcOut)
         print("           total output bandwidth: %7.2f MHz"%(self.nOutCh*self.fcOut))
 
         print("")
-        print("      frequency quantization size: %f Hz"%(1e6*self.dfDdsMhz))
+        print("             frequency resolution: %7.4f Hz"%(1e6*self.DF))
+        print("      output/input DDS resolution: %f"%(self.dds_out.DF_DDS/self.ddscic.DF_DDS))
 
     def inFreq2ch(self, frequency):
         """
@@ -1193,10 +1197,10 @@ class TopSoc(QickSoc):
                 offset from the center frequency, in MHz
         """  
 
-        f = frequency # - self.get_mixer()
+        f = frequency  #- self.get_mixer()
         ch = self.pfb_out.freq2ch(f, self.get_mixer())[0]
         fOutCenters = self.outCh2FreqCenter(ch)
-        offsets = f - fOutCenters # + self.get_mixer()
+        offsets = f - fOutCenters  #+ self.get_mixer()
         return ch,offsets
  
     
