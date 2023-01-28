@@ -781,10 +781,20 @@ class AxisPfbSynth4x512V1(SocIp):
         freq = ch*fc for N<N/2
         else, freq = (ch-N)*fc
         """
-        folded_N = ((ch + self.N//2) % self.N) - self.N//2
-        freq = folded_N*self.fc
+        ##
+        ##folded_N = ((ch + self.N//2) % self.N) - self.N//2
+        ##freq = folded_N*self.fc
+        ##return freq
+        ##
+        freq = ch*self.fc
+        if isinstance(ch, np.ndarray):
+            freq[ch >= self.N/2] -= self.fs
+        elif ch >= self.N/2:
+            freq -= self.fs
         return freq
-
+    
+    
+    
     def set_fmix(self,f):
         df = self.fb/2**16
         f = (round(f/df))*df
@@ -1159,7 +1169,7 @@ class TopSoc(QickSoc):
             ch : int
                 the PFB channel
         """  
-        f = frequency - self.fMixerQuantized
+        f = frequency - self.get_mixer()
         ch = self.pfb_out.freq2ch(f)
         return ch
     
@@ -1183,10 +1193,10 @@ class TopSoc(QickSoc):
                 offset from the center frequency, in MHz
         """  
 
-        f = frequency - self.fMixerQuantized
-        ch = self.pfb_out.freq2ch(f)
+        f = frequency # - self.get_mixer()
+        ch = self.pfb_out.freq2ch(f, self.get_mixer())[0]
         fOutCenters = self.outCh2FreqCenter(ch)
-        offsets = f - fOutCenters + self.fMixerQuantized
+        offsets = f - fOutCenters # + self.get_mixer()
         return ch,offsets
  
     
@@ -1205,6 +1215,6 @@ class TopSoc(QickSoc):
             frequency at the center of the channel (MHz)
         """
         f = self.pfb_out.ch2freq(ch)
-        frequency = f + self.fMixerQuantized
+        frequency = f + self.get_mixer()
         return frequency
 
