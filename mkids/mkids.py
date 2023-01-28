@@ -1173,8 +1173,8 @@ class TopSoc(QickSoc):
             ch : int
                 the PFB channel
         """  
-        f = frequency - self.get_mixer()
-        ch = self.pfb_out.freq2ch(f)
+        f = frequency# - self.get_mixer()
+        ch = self.pfb_out.freq2ch(f, self.get_mixer())[0]
         return ch
     
     def outFreq2chOffset(self, frequency):
