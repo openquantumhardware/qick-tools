@@ -59,7 +59,7 @@ class Scan():
         self.nsamp = nsamp
         #_ = self.soc.stream.get_all_data(nt=1, nsamp=nsamp, debug=False)
 
-
+        
     def read(self, truncate=0, average=False, nt=1, nsamp=10000):
         num_tran = self.input_config['num_tran']
         tran_idx = self.input_config['tran_idx']
@@ -68,6 +68,7 @@ class Scan():
         offset = self.input_config['offset']
         x_buf = self.soc.stream.get_data_multi(idx=streams, nt=nt, nsamp=nsamp*num_tran)[:,truncate*num_tran:]
         x_buf = x_buf.reshape(len(streams), -1, num_tran, 2)[stream_idx, :, tran_idx, :]
+        self.x_buf = x_buf
         if average:
             results = x_buf.mean(axis=1)
             results += offset[:, np.newaxis]
@@ -86,7 +87,10 @@ class Scan():
 
     def fscan(self, freqs, amps, fis, 
               bandwidth, nf, decimation, nt, truncate, 
-              pfbOutQout=0, verbose=False, doProgress=False):
+              pfbOutQout=0, verbose=False, doProgress=False,
+             retainXBuf = False):
+        if retainXBuf:
+            self.retainedXbuf = []
         dfs = np.linspace(-bandwidth/2, bandwidth/2, num=nf)
         xs = np.zeros((nf, len(freqs)), dtype=complex)
         if doProgress:
@@ -99,6 +103,9 @@ class Scan():
             self.setTones(df+freqs, amps, fis)
             self.prepRead(decimation)
             x = self.read(truncate=truncate, average=True)
+            #x = self.read(truncate=truncate, average=True)
+            if retainXBuf:
+                self.retainedXbuf.append(self.x_buf)
             xs[i] =  x  
         return {
                 "fMixer": self.soc.get_mixer(),
