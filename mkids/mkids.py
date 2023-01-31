@@ -772,7 +772,7 @@ class AxisPfbSynth4x512V1(SocIp):
         minf = fmix - self.fs/2 - fc/2
         maxf = fmix + self.fs/2 - fc/2
         if np.min(freq) < minf or np.max(freq) > maxf:
-            raise ValueError('output PFB: frequency should be within [%f,%f] MHz'%(minf, maxf))
+            raise ValueError('output PFB: freq=%f should be within [%f,%f] MHz'%(freq, minf, maxf))
         ch, remainder = np.divmod(freq-fmix+fc/2,fc)
         return np.int64(ch)%self.N, remainder-fc/2, fc*ch, ch
 
