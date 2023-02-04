@@ -320,13 +320,15 @@ class AxisChSelPfbV2(SocIp):
         if isinstance(ch, list):
             ch = np.array(ch)
         # Sanity check.
-        if debug: print(" in  AxisChSelPfbV2.set:  ch=%s"%ch, end=" ")
+        if debug: print("in  AxisChSelPfbV2.set:  ch=%s"%ch)
         if ch.min() < 0 or ch.max() >= self.NCH:
             raise RuntimeError("invalid channel")
 
         # Transaction number and bit index.
         ntran, addr, bit = self.ch2tran(ch) # bit ranges from 0 to 31, there are 4096/32 channels
-
+        if debug:
+            for i in range(len(ch)):
+                print("   in  AxisChSelPfbV2.set: i, ch[i], ntran[i], addr[i], bit[i] ",i,ch[i],ntran[i], addr[i], bit[i])
         # The streamer will loop through the transactions we select.
         # We need to figure out which channels are going to appear in which transactions.
         unique_ntran = sorted(set(ntran))
@@ -343,7 +345,7 @@ class AxisChSelPfbV2(SocIp):
             self.data_reg = data
             self.we_reg = 1
             self.we_reg = 0
-            if debug: print(" addr=%2d data=%08X done"%(addr, data))
+            if debug: print("in  AxisChSelPfbV2.set: addr=%2d data=%08X done"%(addr, data))
 
         return len(unique_ntran), tran_index
 
@@ -359,7 +361,7 @@ class AxisChSelPfbV2(SocIp):
 
         # Bit.
         bit = ntran%32
-        
+        print("  mkids.py AxisChSelPfbV2.ch2tran:  ch, ntran, addr, bit",ch,ntran,addr,bit)
         return ntran, addr, bit
     
     def ch2idx(self,ch):
@@ -481,7 +483,9 @@ class AxisStreamerV1(SocIp):
         self.set_nsamp(nsamp)
 
         data = np.zeros((nt,self.nsamp_reg,self.NS_NI), dtype=self.DTYPE)
-        # Stash a copy of the 
+        # Stash a copy of the data in "packets" for convenients of debugging
+        self.packets = data
+        
         self.third = []
 
         for i in np.arange(nt):
@@ -554,7 +558,7 @@ class AxisStreamerV1(SocIp):
         # idx: from 0..7, index of channel.
 
         packets = self.transfer(nt=nt, nsamp=nsamp, debug=debug)
-            
+        self.packets = packets
         # Number of samples per transfer.
         ns = len(packets[0])
         
@@ -1106,12 +1110,13 @@ class TopSoc(QickSoc):
             ch : int
                 the PFB channel
         """  
-        N = self.pfb_in.N
-        fc = self.fsIn/N
-        k =np.round(frequency/fc)
-        ch = (np.mod(k+N/2, N)).astype(int)
-        return ch
-
+        #N = self.pfb_in.N
+        #fc = self.fsIn/N
+        #k =np.round(frequency/fc)
+        #ch = (np.mod(k+N/2, N)).astype(int)
+        #return ch
+        K, dds_freq, pdb_freq, ch = self.pfb_in.freq2ch(frequency)
+        return K
 
     def inFreq2chOffset(self, frequency):
         """
@@ -1133,14 +1138,16 @@ class TopSoc(QickSoc):
                 offset from the center frequency, in MHz
         """  
 
-        N = self.pfb_in.N
-        fc = self.fsIn/N
-        k = np.round(frequency/fc)
-        ch = (np.mod(k+N/2, N)).astype(int)
-        fCenter = k*fc
-        offset = frequency-fCenter
-        return ch,offset
-    
+        #N = self.pfb_in.N
+        #fc = self.fsIn/N
+        #k = np.round(frequency/fc)
+        #ch = (np.mod(k+N/2, N)).astype(int)
+        #fCenter = k*fc
+        #offset = frequency-fCenter
+        #return ch,offset
+        K, dds_freq, pdb_freq, ch = self.pfb_in.freq2ch(frequency)
+        return K,dds_freq
+
     def inCh2FreqCenter(self, ch):
         """
         Converts from input channel number to the frequency at the center of that channel
@@ -1156,7 +1163,16 @@ class TopSoc(QickSoc):
             frequency at the center of the channel (MHz)
         """
    
-        fCenter = np.mod(ch*self.fsIn/self.pfb_in.N + self.fsIn/2, self.fsIn)
+        #fCenter = np.mod(ch*self.fsIn/self.pfb_in.N + self.fsIn/2, self.fsIn)
+    
+        try:
+            iterator = iter(ch)
+        except TypeError:
+            fCenter = self.pfb_in.ch2freq(ch)
+        else:
+            fCenter = np.arange(len(ch), dtype=float)
+            for i in range(len(ch)):
+                fCenter[i] = self.pfb_in.ch2freq(ch[i])                        
         return fCenter
     
     def outFreq2ch(self, frequency):

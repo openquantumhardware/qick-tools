@@ -3,7 +3,7 @@ import os,sys,time
 import numpy as np
 from numpy.polynomial.polynomial import Polynomial
 from tqdm.notebook import trange, tqdm
-
+import Packets
 class Scan():
     
     def __init__(self, soc):
@@ -16,6 +16,10 @@ class Scan():
         freqs = self.soc.DF*np.round(freqsRequested/self.soc.DF)
         #freqs = freqsRequested
         pfb_chs, dds_freqs, _, unwrapped_chs = self.soc.pfb_out.freq2ch(freqs, self.soc.pfb_out.get_fmix())
+        if verbose:
+            for i in range(len(freqs)):
+                print("i, freqs[i], pfb_chs[i], dds_freqs[i], unwarpped_chs[i]",
+                     i, freqs[i], pfb_chs[i], dds_freqs[i], unwrapped_chs[i])
         if len(set(pfb_chs)) != len(pfb_chs):
             raise ValueError("Output tones map to PFB channels %s, which are not unique"%(str(pfb_chs)))        
         for ch, fdds, amplitude, unwrapped_ch, fiDeg in zip(pfb_chs, dds_freqs, amplitudes, unwrapped_chs, np.rad2deg(fis)):
@@ -27,24 +31,28 @@ class Scan():
         self.toneAmplitudes = amplitudes
         self.toneFis = fis
         
-    def prepRead(self, decimation, nsamp=10000, pfbInQout=8, verbose=False):
+    def prepRead(self, decimation, nsamp=10000, pfbInQout=8, verbose=False, debugChselSet=False):
+        print("in Scan.py prepRead:  self.toneFreqs=",self.toneFreqs)
         K, dds_freq, pfb_freq, ch = self.soc.pfb_in.freq2ch(self.toneFreqs)
         if len(set(K)) < len(self.toneFreqs):
             raise ValueError("input PFB channels are not unique: %s"%(K))
         streams, stream_idx = self.soc.chsel.ch2idx(K)
+        if verbose:
+            for i in range(len(K)):
+                print("i, K, streams[i], stream_ids[i]",i,K[i], streams[i], stream_idx[i])
         self.soc.pfb_in.qout(pfbInQout)
         self.soc.ddscic.decimation(value=decimation)
         fs = self.soc.pfb_in.get_fb()/self.soc.ddscic.get_decimate()
         self.soc.ddscic.dds_outsel(outsel="product")
         for i in range(len(self.toneFreqs)):
-            self.soc.ddscic.set_ddsfreq(ch_id=K[i], f=dds_freq[i]) # Is this in radians or degrees?
+            self.soc.ddscic.set_ddsfreq(ch_id=K[i], f=dds_freq[i])
             if verbose:
-                print("Scan.prepRead: ch_id, dds_freq =",ch_id, dds_freq)
+                print("Scan.prepRead: i, ch_id, dds_freq =",i, K[i], dds_freq[i])
         # need to correct by 1.0 if in "product" mode?
         offset = np.full_like(K, 1.0)
         fcenter = pfb_freq+dds_freq
         
-        num_tran, tran_idx = self.soc.chsel.set(K)
+        num_tran, tran_idx = self.soc.chsel.set(K, debug=debugChselSet)
 
         self.input_config = {}
         self.input_config['fs'] = fs
@@ -60,15 +68,15 @@ class Scan():
         #_ = self.soc.stream.get_all_data(nt=1, nsamp=nsamp, debug=False)
 
         
-    def read(self, truncate=0, average=False, nt=1, nsamp=10000):
+    def read(self, truncate=0, average=False, nt=1, nsamp=10000, subtractInputPhase=True):
         num_tran = self.input_config['num_tran']
         tran_idx = self.input_config['tran_idx']
         streams = self.input_config['streams']
         stream_idx = self.input_config['stream_idx']
         offset = self.input_config['offset']
         x_buf = self.soc.stream.get_data_multi(idx=streams, nt=nt, nsamp=nsamp*num_tran)[:,truncate*num_tran:]
-        x_buf = x_buf.reshape(len(streams), -1, num_tran, 2)[stream_idx, :, tran_idx, :]
         self.x_buf = x_buf
+        x_buf = x_buf.reshape(len(streams), -1, num_tran, 2)[stream_idx, :, tran_idx, :]
         if average:
             results = x_buf.mean(axis=1)
             results += offset[:, np.newaxis]
@@ -76,9 +84,22 @@ class Scan():
             retval = results_complex
         else:
             retval = (x_buf + offset[:, np.newaxis, np.newaxis]).dot([1,1j])
-        self._subtractInputPhase(retval)
+        if subtractInputPhase:
+            self._subtractInputPhase(retval)
         return retval
     
+    def readAndUnpack(self,  nt=1, nsamp=10000, mean=False, debugTransfer=False, unpackVerbose=False, subtractInputPhase=True):
+        packets = self.soc.stream.transfer(nt=nt, nsamp=nsamp, debug=debugTransfer)
+        self.p = Packets.Packets(packets, self.input_config)
+        self.p.unpack(unpackVerbose)
+        if mean:
+            retval = self.p.xs.mean(axis=1)
+        else:
+            retval = self.p.xs
+        if subtractInputPhase:
+            self._subtractInputPhase(retval)
+            return retval
+   
     def _subtractInputPhase(self, xs, inputPhase=True):
         for i,toneFi in enumerate(self.toneFis):
             if inputPhase:
