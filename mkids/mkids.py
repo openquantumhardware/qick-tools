@@ -328,7 +328,7 @@ class AxisChSelPfbV2(SocIp):
         ntran, addr, bit = self.ch2tran(ch) # bit ranges from 0 to 31, there are 4096/32 channels
         if debug:
             for i in range(len(ch)):
-                print("   in  AxisChSelPfbV2.set: i, ch[i], ntran[i], addr[i], bit[i] ",i,ch[i],ntran[i], addr[i], bit[i])
+                print("   in AxisChSelPfbV2.set: i=%2d,  ch[i]=%4d,  ntran[i]=%3d, addr[i]=%3d, bit[i]=%3d "%(i,ch[i],ntran[i], addr[i], bit[i]))
         # The streamer will loop through the transactions we select.
         # We need to figure out which channels are going to appear in which transactions.
         unique_ntran = sorted(set(ntran))
@@ -336,6 +336,8 @@ class AxisChSelPfbV2(SocIp):
 
         # we need to set NM 32-bit bitmasks
         datas = np.zeros(self.NM, dtype=np.uint32)
+        if debug:
+            print(" in AxisChSelPfbV2.set:  now addr =",addr)
         # set all the correct bits to 1
         np.bitwise_or.at(datas, addr, (1<<bit).astype(np.uint32))
         
@@ -361,7 +363,7 @@ class AxisChSelPfbV2(SocIp):
 
         # Bit.
         bit = ntran%32
-        print("  mkids.py AxisChSelPfbV2.ch2tran:  ch, ntran, addr, bit",ch,ntran,addr,bit)
+        #print("  mkids.py AxisChSelPfbV2.ch2tran:  ch, ntran, addr, bit",ch,ntran,addr,bit)
         return ntran, addr, bit
     
     def ch2idx(self,ch):
@@ -475,6 +477,8 @@ class AxisStreamerV1(SocIp):
         return self.buff
 
     def transfer(self, nt, nsamp, debug=False):
+        print("mkids.py transfer nt,nsamp,debug=",nt,nsamp,debug)
+
         # Data structure:
         # First dimention: number of dma transfers.
         # Second dimension: number of streamer transactions.
@@ -776,7 +780,7 @@ class AxisPfbSynth4x512V1(SocIp):
         minf = fmix - self.fs/2 - fc/2
         maxf = fmix + self.fs/2 - fc/2
         if np.min(freq) < minf or np.max(freq) > maxf:
-            raise ValueError('output PFB: freq=%f should be within [%f,%f] MHz'%(freq, minf, maxf))
+            raise ValueError('output PFB: freq=%s should be within [%f,%f] MHz'%(str(freq), minf, maxf))
         ch, remainder = np.divmod(freq-fmix+fc/2,fc)
         return np.int64(ch)%self.N, remainder-fc/2, fc*ch, ch
 

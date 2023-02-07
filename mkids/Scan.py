@@ -4,6 +4,18 @@ import numpy as np
 from numpy.polynomial.polynomial import Polynomial
 from tqdm.notebook import trange, tqdm
 import Packets
+"""
+The firmware chooses which input channels to read out.
+
+
+The number of input channels is soc.nInCh and for the ZCU111 this is 4096.  Which channel to read out is defined by an address and a bit.  This points to a set of 8 input channels.
+
+For the ZCU111 these numbers are:
+    number of addresses = 16
+    number of bits = 32
+    This yields the same number of channels, 16*32*8 = 4096.16
+"""
+
 class Scan():
     
     def __init__(self, soc):
@@ -32,14 +44,35 @@ class Scan():
         self.toneFis = fis
         
     def prepRead(self, decimation, nsamp=10000, pfbInQout=8, verbose=False, debugChselSet=False):
-        print("in Scan.py prepRead:  self.toneFreqs=",self.toneFreqs)
+        if verbose:
+            print("in Scan.py prepRead:  self.toneFreqs=",self.toneFreqs)
         K, dds_freq, pfb_freq, ch = self.soc.pfb_in.freq2ch(self.toneFreqs)
+        if verbose:
+            print("in Scan.py prepRead:  ch =",ch)
         if len(set(K)) < len(self.toneFreqs):
             raise ValueError("input PFB channels are not unique: %s"%(K))
         streams, stream_idx = self.soc.chsel.ch2idx(K)
+        
+        inCh = self.soc.inFreq2ch(self.toneFreqs)
+        #ntrans, addrs, bits = self.soc.chsel.ch2tran(ch) # bit ranges from 0 to 31 
+        ntrans, addrs, bits = self.soc.chsel.ch2tran(inCh) # bit ranges from 0 to 31 
+        i16Pattern = []
+        bitPrev = -1
+        addrPrev = -1
+        for i,(ntran,addr,bit) in enumerate(zip(ntrans,addrs,bits)):
+            if (bit != bitPrev) or (addr != addrPrev):
+                bitPrev = bit
+                addrPrev =  addr
+                i16Pattern.append(int(ntran))
+        
         if verbose:
-            for i in range(len(K)):
-                print("i, K, streams[i], stream_ids[i]",i,K[i], streams[i], stream_idx[i])
+            print("Scan.prepRead: i16Pattern =",i16Pattern)
+            print("Scan.prepRead: ntrans =",ntrans)
+            print("Scan.prepRead: addrs =",addrs)
+            print("Scan.prepRead: bits =",bits)
+            print("Scan.prepRead: K=",K)
+            print("Scan.prepRead: streams =",streams)
+            print("Scan.prepRead: stream_idx =",stream_idx)
         self.soc.pfb_in.qout(pfbInQout)
         self.soc.ddscic.decimation(value=decimation)
         fs = self.soc.pfb_in.get_fb()/self.soc.ddscic.get_decimate()
@@ -53,7 +86,9 @@ class Scan():
         fcenter = pfb_freq+dds_freq
         
         num_tran, tran_idx = self.soc.chsel.set(K, debug=debugChselSet)
-
+        if verbose:
+            print("num_tran =",num_tran)
+            print("tran_idx =",tran_idx)
         self.input_config = {}
         self.input_config['fs'] = fs
         self.input_config['pfb_ch'] = K
@@ -64,10 +99,11 @@ class Scan():
         self.input_config['streams'] = streams
         self.input_config['stream_idx'] = stream_idx
         self.input_config['offset'] = offset
+        self.input_config['i16Pattern'] =  i16Pattern
         self.nsamp = nsamp
         #_ = self.soc.stream.get_all_data(nt=1, nsamp=nsamp, debug=False)
 
-        
+    """  
     def read(self, truncate=0, average=False, nt=1, nsamp=10000, subtractInputPhase=True):
         num_tran = self.input_config['num_tran']
         tran_idx = self.input_config['tran_idx']
@@ -87,8 +123,10 @@ class Scan():
         if subtractInputPhase:
             self._subtractInputPhase(retval)
         return retval
+    """
     
     def readAndUnpack(self,  nt=1, nsamp=10000, mean=False, debugTransfer=False, unpackVerbose=False, subtractInputPhase=True):
+        print("Scan.py.readAndUnpack:  nsamp =",nsamp, "  nt =",nt)
         packets = self.soc.stream.transfer(nt=nt, nsamp=nsamp, debug=debugTransfer)
         self.p = Packets.Packets(packets, self.input_config)
         self.p.unpack(unpackVerbose)
@@ -98,7 +136,7 @@ class Scan():
             retval = self.p.xs
         if subtractInputPhase:
             self._subtractInputPhase(retval)
-            return retval
+        return retval
    
     def _subtractInputPhase(self, xs, inputPhase=True):
         for i,toneFi in enumerate(self.toneFis):
@@ -107,7 +145,7 @@ class Scan():
  
 
     def fscan(self, freqs, amps, fis, 
-              bandwidth, nf, decimation, nt, truncate, 
+              bandwidth, nf, decimation, nt, truncate, nsamp=10000,
               pfbOutQout=0, verbose=False, doProgress=False,
              retainXBuf = False):
         if retainXBuf:
@@ -125,6 +163,7 @@ class Scan():
             self.prepRead(decimation)
             x = self.read(truncate=truncate, average=True)
             #x = self.read(truncate=truncate, average=True)
+            x = self.readAndUnpack(nt, nsamp,mean)
             if retainXBuf:
                 self.retainedXbuf.append(self.x_buf)
             xs[i] =  x  

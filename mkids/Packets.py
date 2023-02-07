@@ -51,7 +51,6 @@ class Packets():
             print("     tran_idx =",self.input_config["tran_idx"])
             print("   stream_idx =",self.input_config["stream_idx"])
             print(" begin*2 i16s =",self.i16s[:2*num_tran,])
-            
     def unpack(self, verbose=False):
         
         self.data_iq_all = self.packets[:,:,:16].reshape((-1,16))
@@ -61,13 +60,16 @@ class Packets():
         self.inds = np.full(len(self.i16s), False, dtype=bool)
         num_tran = self.input_config['num_tran']
         i = 0
-        test = np.arange(num_tran, dtype=int)
+        self.i16Pattern = self.input_config['i16Pattern']
         self.nGoodSamp = 0
+        self.iFirstGoodSamp = -1
         while i <= len(self.i16s)-num_tran:
-            if np.array_equal(test, self.i16s[i:i+num_tran]):
+            if np.array_equal(self.i16Pattern, self.i16s[i:i+num_tran]):
                 self.inds[i:i+num_tran] =  True
-                i += num_tran
                 self.nGoodSamp += 1
+                if self.iFirstGoodSamp == -1:
+                    self.iFirstGoodSamp = i
+                i += num_tran
             else:
                 i += 1
         self.data_iq = self.data_iq_all[self.inds,:]
@@ -92,12 +94,16 @@ class Packets():
             nTones = len(self.input_config['tran_idx'])
             nStreams = len(self.input_config["streams"])
             nGoodSamp = self.nGoodSamp
-            print("nt =",nt)
-            print("nsamp =",nsamp)
-            print("num_tran =",num_tran)
-            print("nTones =",nTones)
-            print("nStreams =",nStreams)
-            print("nGoodSamp =",nGoodSamp)
+            iFirstGoodSamp = self.iFirstGoodSamp
+            i16Pattern = self.i16Pattern
+            print("            nt =",nt)
+            print("         nsamp =",nsamp)
+            print("      num_tran =",num_tran)
+            print("        nTones =",nTones)
+            print("      nStreams =",nStreams)
+            print("     nGoodSamp =",nGoodSamp)
+            print("iFirstGoodSamp =",iFirstGoodSamp)
+            print("i16Pattern",i16Pattern)
             #print(packetss[iRead].shape)
             print("                     i16s (nt*num_tran*nsamp):",self.i16s.shape)
             print("              packets (nt,num_tran*nsamp, 17):",self.packets.shape)
@@ -110,4 +116,5 @@ class Packets():
             print("     tran_idx =",self.input_config["tran_idx"])
             print("   stream_idx =",self.input_config["stream_idx"])
             print(" begin*2 i16s =",self.i16s[:2*num_tran,])
+            print("   end*2 i16s =",self.i16s[-2*num_tran:,])
  
