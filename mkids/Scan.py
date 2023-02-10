@@ -43,7 +43,7 @@ class Scan():
         self.toneAmplitudes = amplitudes
         self.toneFis = fis
         
-    def prepRead(self, decimation, nsamp=10000, pfbInQout=8, verbose=False, debugChselSet=False):
+    def prepRead(self, decimation, pfbInQout=8, verbose=False, debugChselSet=False):
         if verbose:
             print("in Scan.py prepRead:  self.toneFreqs=",self.toneFreqs)
         K, dds_freq, pfb_freq, ch = self.soc.pfb_in.freq2ch(self.toneFreqs)
@@ -84,23 +84,23 @@ class Scan():
         # need to correct by 1.0 if in "product" mode?
         offset = np.full_like(K, 1.0)
         fcenter = pfb_freq+dds_freq
-        
         num_tran, tran_idx = self.soc.chsel.set(K, debug=debugChselSet)
+        self.ntranByTone, self.streamByTone = self.soc.inFreq2NtranStream(self.toneFreqs)
         if verbose:
-            print("num_tran =",num_tran)
-            print("tran_idx =",tran_idx)
-        self.input_config = {}
-        self.input_config['fs'] = fs
-        self.input_config['pfb_ch'] = K
-        self.input_config['dds_freq'] = dds_freq
-        self.input_config['center_freq'] = fcenter
-        self.input_config['num_tran'] = num_tran
-        self.input_config['tran_idx'] = tran_idx
-        self.input_config['streams'] = streams
-        self.input_config['stream_idx'] = stream_idx
-        self.input_config['offset'] = offset
-        self.input_config['i16Pattern'] =  i16Pattern
-        self.nsamp = nsamp
+            print("self.ntranByTone =",self.ntranByTone)
+            print("self.streamByTone =",self.streamByTone)
+        #self.input_config = {}
+        #self.input_config['fs'] = fs
+        #self.input_config['pfb_ch'] = K
+        #self.input_config['dds_freq'] = dds_freq
+        #self.input_config['center_freq'] = fcenter
+        #self.input_config['num_tran'] = num_tran
+        #self.input_config['tran_idx'] = tran_idx
+        #self.input_config['streams'] = streams
+        #self.input_config['stream_idx'] = stream_idx
+        #self.input_config['offset'] = offset
+        #self.input_config['i16Pattern'] =  i16Pattern
+        #self.nsamp = nsamp
         #_ = self.soc.stream.get_all_data(nt=1, nsamp=nsamp, debug=False)
 
     """  
@@ -125,19 +125,43 @@ class Scan():
         return retval
     """
     
-    def readAndUnpack(self,  nt=1, nsamp=10000, mean=False, debugTransfer=False, unpackVerbose=False, subtractInputPhase=True):
+    def readAndUnpack(self,  nt=1, nsamp=10000, debugTransfer=False, unpackVerbose=False, subtractInputPhase=True):
         print("Scan.py.readAndUnpack:  nsamp =",nsamp, "  nt =",nt)
-        packets = self.soc.stream.transfer(nt=nt, nsamp=nsamp, debug=debugTransfer)
-        self.p = Packets.Packets(packets, self.input_config)
-        self.p.unpack(unpackVerbose)
-        if mean:
-            retval = self.p.xs.mean(axis=1)
-        else:
-            retval = self.p.xs
-        if subtractInputPhase:
-            self._subtractInputPhase(retval)
-        return retval
-   
+        self.packets = self.soc.stream.transfer(nt=nt, nsamp=nsamp, debug=debugTransfer)
+        return self.unpack(unpackVerbose)
+    
+    
+    def unpack(self, verbose):
+        
+        packets = self.packets
+        if verbose: print("packets.shape =",packets.shape)
+        ntrans = packets[:,:,16]
+        if verbose: print("ntrans.shape =",ntrans.shape)
+        xis = packets[:,:,0:16:2]
+        if verbose: print("xis.shape =",xis.shape)
+        xqs = packets[:,:,1:17:2]
+        if verbose: print("xqs.shape =",xqs.shape)
+        xs = xis + 1j*xqs
+        if verbose: print("xs.shape =",xs.shape)
+    
+        ntranPattern = np.sort(np.unique(self.ntranByTone))
+        if verbose: print(" ntranPattern =",ntranPattern)
+        nPattern = len(ntranPattern)
+
+        xsByNtTone = []
+        for it in range(xs.shape[0]):
+            xsByTone = []
+            for iTone,(ntran,stream) in enumerate(zip(self.ntranByTone,self.streamByTone)):
+                temp = xs[it, ntrans[it]==ntran, stream]
+                xsByTone.append(temp)
+                if verbose: print("   nt, iTone ,xsByTone[-1].shape",it,iTone,xsByTone[-1].shape)
+            xsByNtTone.append(xsByTone)
+                   
+        #if subtractInputPhase:
+        #    self._subtractInputPhase(retval)
+
+        return xsByNtTone
+
     def _subtractInputPhase(self, xs, inputPhase=True):
         for i,toneFi in enumerate(self.toneFis):
             if inputPhase:

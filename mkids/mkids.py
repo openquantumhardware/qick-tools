@@ -1179,6 +1179,11 @@ class TopSoc(QickSoc):
                 fCenter[i] = self.pfb_in.ch2freq(ch[i])                        
         return fCenter
     
+    def inFreq2NtranStream(self,freqs):
+        inChs = self.inFreq2ch(freqs)
+        ntran,stream = np.divmod(inChs.astype(int), self.chsel.L, dtype=int)
+        return ntran,stream
+        
     def outFreq2ch(self, frequency):
         """
         Return the output PFB bin that contains the frequency
