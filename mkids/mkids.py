@@ -477,8 +477,7 @@ class AxisStreamerV1(SocIp):
         return self.buff
 
     def transfer(self, nt, nsamp, debug=False):
-        print("mkids.py transfer nt,nsamp,debug=",nt,nsamp,debug)
-
+ 
         # Data structure:
         # First dimention: number of dma transfers.
         # Second dimension: number of streamer transactions.
