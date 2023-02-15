@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
-import os,sys,time
+import copy,os,sys,time
 import numpy as np
 from numpy.polynomial.polynomial import Polynomial
 from tqdm.notebook import trange, tqdm
-import Packets
+from scipy.interpolate import interp1d
 """
 The firmware chooses which input channels to read out.
 
@@ -89,93 +89,71 @@ class Scan():
         if verbose:
             print("self.ntranByTone =",self.ntranByTone)
             print("self.streamByTone =",self.streamByTone)
-        #self.input_config = {}
-        #self.input_config['fs'] = fs
-        #self.input_config['pfb_ch'] = K
-        #self.input_config['dds_freq'] = dds_freq
-        #self.input_config['center_freq'] = fcenter
-        #self.input_config['num_tran'] = num_tran
-        #self.input_config['tran_idx'] = tran_idx
-        #self.input_config['streams'] = streams
-        #self.input_config['stream_idx'] = stream_idx
-        #self.input_config['offset'] = offset
-        #self.input_config['i16Pattern'] =  i16Pattern
-        #self.nsamp = nsamp
-        #_ = self.soc.stream.get_all_data(nt=1, nsamp=nsamp, debug=False)
 
-    """  
-    def read(self, truncate=0, average=False, nt=1, nsamp=10000, subtractInputPhase=True):
-        num_tran = self.input_config['num_tran']
-        tran_idx = self.input_config['tran_idx']
-        streams = self.input_config['streams']
-        stream_idx = self.input_config['stream_idx']
-        offset = self.input_config['offset']
-        x_buf = self.soc.stream.get_data_multi(idx=streams, nt=nt, nsamp=nsamp*num_tran)[:,truncate*num_tran:]
-        self.x_buf = x_buf
-        x_buf = x_buf.reshape(len(streams), -1, num_tran, 2)[stream_idx, :, tran_idx, :]
-        if average:
-            results = x_buf.mean(axis=1)
-            results += offset[:, np.newaxis]
-            results_complex = results.dot([1, 1j])
-            retval = results_complex
-        else:
-            retval = (x_buf + offset[:, np.newaxis, np.newaxis]).dot([1,1j])
-        if subtractInputPhase:
-            self._subtractInputPhase(retval)
-        return retval
-    """
     
-    def readAndUnpack(self,  nt=1, nsamp=10000, debugTransfer=False, unpackVerbose=False, subtractInputPhase=True):
-        print("Scan.py.readAndUnpack:  nsamp =",nsamp, "  nt =",nt)
+    def readAndUnpack(self,  nt=1, nsamp=10000,
+                      average=False, subtractInputPhase=True, iBegin=0,
+                      debugTransfer=False, unpackVerbose=False):
         self.packets = self.soc.stream.transfer(nt=nt, nsamp=nsamp, debug=debugTransfer)
-        return self.unpack(unpackVerbose)
+        return self.unpack(unpackVerbose, average, subtractInputPhase=subtractInputPhase, iBegin=iBegin)
     
     
-    def unpack(self, verbose):
-        
-        packets = self.packets
-        if verbose: print("packets.shape =",packets.shape)
+    def unpack(self, verbose, average, subtractInputPhase=True, iBegin=0):
+        if verbose: print("self.packets.shape =",self.packets.shape)
+        packets = self.packets[:, iBegin:, :]
+        if verbose: print("     packets.shape =",packets.shape)
         ntrans = packets[:,:,16]
-        if verbose: print("ntrans.shape =",ntrans.shape)
+        if verbose: print("      ntrans.shape =",ntrans.shape)
         xis = packets[:,:,0:16:2]
-        if verbose: print("xis.shape =",xis.shape)
+        if verbose: print("         xis.shape =",xis.shape)
         xqs = packets[:,:,1:17:2]
-        if verbose: print("xqs.shape =",xqs.shape)
+        if verbose: print("         xqs.shape =",xqs.shape)
         xs = xis + 1j*xqs
-        if verbose: print("xs.shape =",xs.shape)
+        if verbose: print("          xs.shape =",xs.shape)
     
         ntranPattern = np.sort(np.unique(self.ntranByTone))
         if verbose: print(" ntranPattern =",ntranPattern)
         nPattern = len(ntranPattern)
 
         xsByNtTone = []
-        for it in range(xs.shape[0]):
+        nt = xs.shape[0]
+        nTone = len(self.ntranByTone)
+        for it in range(nt):
             xsByTone = []
             for iTone,(ntran,stream) in enumerate(zip(self.ntranByTone,self.streamByTone)):
                 temp = xs[it, ntrans[it]==ntran, stream]
+                if verbose: print("   nt, iTone , x.shape", it, iTone, temp.shape)
+
+                if subtractInputPhase:
+                    temp = self._subtractInputPhase(temp, self.toneFis[iTone])
+
                 xsByTone.append(temp)
-                if verbose: print("   nt, iTone ,xsByTone[-1].shape",it,iTone,xsByTone[-1].shape)
             xsByNtTone.append(xsByTone)
-                   
-        #if subtractInputPhase:
-        #    self._subtractInputPhase(retval)
+        if average:
+            retval = np.zeros((nt,nTone), dtype=complex)
+            for it in range(nt):
+                for iTone in range(nTone):
+                    retval[it,iTone] =  xsByNtTone[it][iTone].mean()
+            retval = retval.mean(axis=0)
+        else:
+            retval = xsByNtTone
+        return retval
 
-        return xsByNtTone
-
-    def _subtractInputPhase(self, xs, inputPhase=True):
-        for i,toneFi in enumerate(self.toneFis):
-            if inputPhase:
-                xs[i] = np.abs(xs[i])*np.exp(1j * (np.angle(xs[i])-toneFi))
- 
+    def _subtractInputPhase(self, x, toneFi):
+        """
+        Return values with phase of x reducted by toneFi in radians
+        """
+        xrot = np.abs(x)*np.exp(1j * (np.angle(x)-toneFi))
+        return xrot
 
     def fscan(self, freqs, amps, fis, 
-              bandwidth, nf, decimation, nt, truncate, nsamp=10000,
+              bandwidth, nf, decimation, nt, iBegin=200, nsamp=10000,
               pfbOutQout=0, verbose=False, doProgress=False,
-             retainXBuf = False):
-        if retainXBuf:
-            self.retainedXbuf = []
+              retainPackets = False, subtractInputPhase=True):
         dfs = np.linspace(-bandwidth/2, bandwidth/2, num=nf)
         xs = np.zeros((nf, len(freqs)), dtype=complex)
+        if retainPackets:
+            self.retainedPackets = []
         if doProgress:
             iValues = trange(len(dfs))
         else:
@@ -185,11 +163,11 @@ class Scan():
             df = dfs[i]
             self.setTones(df+freqs, amps, fis)
             self.prepRead(decimation)
-            x = self.read(truncate=truncate, average=True)
-            #x = self.read(truncate=truncate, average=True)
-            x = self.readAndUnpack(nt, nsamp,mean)
-            if retainXBuf:
-                self.retainedXbuf.append(self.x_buf)
+            x = self.readAndUnpack(nt, nsamp, average=True,
+                                   subtractInputPhase=subtractInputPhase,
+                                   iBegin=iBegin)
+            if retainPackets:
+                self.retainedPackets.append(self.packets)
             xs[i] =  x  
         return {
                 "fMixer": self.soc.get_mixer(),
@@ -223,13 +201,15 @@ class Scan():
                 break
 
         fList = np.sort(np.unique(np.array(fList)))
-        return fList
+        i0 = max(0, np.searchsorted(fList, fMin)-1)
+        i1 = np.searchsorted(fList, fMax)+1
+        return fList[i0:i1]
     
     def makeCalibration(self, fMixer, fMin, fMax, nf=100, nt=10, 
                         decimation=2, pfbOutQout=0, verbose=False,
-                       randSeed=1234991, truncate=500, doProgress=True):
+                       randSeed=1234991, iBegin=500, doProgress=True,
+                       nsamp=10000, nominalDelay=None):
         
-        fList = self.makeFList(fMixer, fMin, fMax)
         fcMax = max(self.soc.fcIn, self.soc.fcOut)
         fcMin = min(self.soc.fcIn, self.soc.fcOut)
         fMinCentered = self.soc.outCh2FreqCenter(self.soc.outFreq2ch(fMin))
@@ -240,18 +220,35 @@ class Scan():
         np.random.seed(randSeed)
         fis = np.random.uniform(0, 2*np.pi, len(freqs))
         bandwidth = self.soc.fcOut * (1-1/nf) 
-        fscan = self.fscan(freqs, amps, fis, bandwidth, nf, decimation, nt,
-                          truncate, pfbOutQout, verbose=verbose, doProgress=doProgress)
-        
-        return fscan
+        fscan = self.fscan(freqs, amps, fis, 
+                           bandwidth, nf, decimation, 
+                           nt, iBegin, nsamp,
+                           pfbOutQout, verbose=verbose, doProgress=doProgress)
+        if nominalDelay is not None:
+            applyDelay(fscan, nominalDelay)
+        fList = self.makeFList(fMixer, fMin, fMax)
+        sFreqs, fAmps, sFis = fscanToSpectrum(fscan)
+        sxs = fAmps*np.exp(1j*sFis)
+        cInterps = []
+        for i in range(len(fList)-1):
+            f0 = fList[i]
+            f1 = fList[i+1]
+            inds = (f0 < sFreqs) & (sFreqs < f1)
+            print(" in MakeCalibration:  i, f0, f1",i,f0,f1)
+            interp = interp1d(sFreqs[inds], sxs[inds], bounds_error=False, fill_value="extrapolate")
+            cInterps.append(interp)
+        calib = {"fMixer":fMixer, "fList":fList, "cInterps":cInterps, 
+                 "fMin":fMin, "fMax":fMax, "fscan":fscan, "nominalDelay":nominalDelay} 
+        return calib
     
-    def measureNominalDelay(self, outCh, nf=20, nt=1, verbose=False, doProgress=False, doPlot=False, decimation=32, truncate=500, pfbOutQout=0):
+    def measureNominalDelay(self, outCh, nf=20, nt=1, verbose=False, doProgress=False, doPlot=False, decimation=32, iBegin=500, pfbOutQout=0, nsamp=10000):
         freqs = np.array([self.soc.outCh2FreqCenter(outCh)])
         amps = np.array([0.9])
         fis = np.array([0.0])
         bandwidth = self.soc.fcOut / 100
-        self.mndScan = self.fscan(freqs, amps, fis, bandwidth, nf, decimation, nt,
-                      truncate, pfbOutQout, verbose=verbose, doProgress=doProgress)
+        self.mndScan = self.fscan(freqs, amps, fis, 
+                                  bandwidth, nf, decimation, nt,
+                      iBegin, nsamp, pfbOutQout, verbose=verbose, doProgress=doProgress)
        
         iTone = 0
         dfs = self.mndScan['dfs']
@@ -272,6 +269,26 @@ class Scan():
                 plt.suptitle("outCh=%d DDSDelay = %f $\mu$sec"%(outCh,nominalDelay))
         return nominalDelay
 
+def applyCalibration(fscan, calibration, amplitudeMax=30000):
+    fscanCalib = copy.deepcopy(fscan)
+    nominalDelay = calibration['nominalDelay']
+    applyDelay(fscanCalib, nominalDelay)
+    if nominalDelay != fscanCalib['delayApplied']:
+        raise ValueError("fscan already had a delay applied", nominalDelay, fscanCalib['delayApplied'])
+    dfs = fscanCalib['dfs']
+    for iTone,(freq,xs) in enumerate(zip(fscanCalib['freqs'],fscanCalib['xs'])):
+        freqs = freq+dfs
+        xCalib = np.zeros(len(freqs), dtype=complex)
+        for i, freq in enumerate(freqs):
+            iCalib = np.searchsorted(calibration['fList'], freq)-1 
+            xCalib[i] = calibration['cInterps'][iCalib](freq)
+        gain = amplitudeMax/np.abs(xCalib)
+        fscanCalib['xs'][:,iTone] *= gain
+        dfi = np.angle(xCalib)
+        xs = fscanCalib['xs'][:,iTone]
+        fscanCalib['xs'][:,iTone] = np.abs(xs)*np.exp(1j*(np.angle(xs)-dfi))
+    return fscanCalib                                                     
+
 
 def fscanPlot(fscan, iTone):
     dfs = fscan["dfs"]
@@ -287,13 +304,9 @@ def fscanToSpectrum(fscan):
     dfs = fscan['dfs']
     freqs = fscan['freqs']
     allfreqs = np.zeros((len(freqs),len(dfs)))
-    #allAmps = np.zeros((len(fTones),len(dfs)))
-    #allFis = np.zeros((len(fTones),len(dfs)))
     for i,fTone in enumerate(freqs):
         allfreqs[i,:] = freqs[i]+dfs
-    print("allfreqs.shape =",allfreqs.shape)
     allfreqs = allfreqs.ravel()
-    print("allfreqs.shape =",allfreqs.shape)
     xs = np.transpose(fscan['xs'])
     allamps = np.abs(xs).ravel()
     allfis = np.angle(xs).ravel()
@@ -301,6 +314,10 @@ def fscanToSpectrum(fscan):
     return allfreqs[inds], allamps[inds], allfis[inds]
    
 def applyDelay(fscan, delay):
+    try:
+        fscan['delayApplied'] += delay
+    except KeyError:
+        fscan['delayApplied'] =  delay
     for iTone in range(fscan['xs'].shape[1]):
         xs = fscan['xs'][:,iTone]
         freqs = fscan['dfs'] + fscan['freqs'][iTone]
