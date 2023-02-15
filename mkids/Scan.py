@@ -234,7 +234,6 @@ class Scan():
             f0 = fList[i]
             f1 = fList[i+1]
             inds = (f0 < sFreqs) & (sFreqs < f1)
-            print(" in MakeCalibration:  i, f0, f1",i,f0,f1)
             interp = interp1d(sFreqs[inds], sxs[inds], bounds_error=False, fill_value="extrapolate")
             cInterps.append(interp)
         calib = {"fMixer":fMixer, "fList":fList, "cInterps":cInterps, 
