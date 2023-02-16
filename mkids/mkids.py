@@ -486,10 +486,9 @@ class AxisStreamerV1(SocIp):
         self.set_nsamp(nsamp)
 
         data = np.zeros((nt,self.nsamp_reg,self.NS_NI), dtype=self.DTYPE)
-        # Stash a copy of the data in "packets" for convenients of debugging
+        # Stash a copy of the data in "packets" for debugging
         self.packets = data
         
-        self.third = []
 
         for i in np.arange(nt):
             if debug:
@@ -529,46 +528,13 @@ class AxisStreamerV1(SocIp):
             self.stop()
                 
             # Data format:
-            # Each streamer transaction is 512 bits. It contains 8 samples (32-bit each) plus 1 sample (16-bit) for TUSER.
+            # Each streamer transaction is 512 bits. 
+            # It contains 8 samples (32-bit each) plus 1 sample (16-bit) for TUSER.
             # The upper 15 samples are filled with zeros.        
             data[i,:,:] = self.buff.reshape((-1, self.NS_TR))[:self.nsamp_reg,:self.NS_NI]
-            self.third.append(data[:,:,16])
 
         return data
     
-    def get_data(self, nt=1, nsamp=10000, idx=0, debug=False):
-        # nt: number of dma transfers.
-        # idx: from 0..7, index of channel.
-
-        # Format data.
-        data_iq = self.get_all_data(nt=nt, nsamp=nsamp, debug=debug)
-        return data_iq[:,2*idx:2*idx+2]
-
-    def get_data_multi(self, idx, nt=1, nsamp=10000, debug=False):
-        # nt: number of dma transfers.
-        # idx: from 0..7, index of channel.
-        #idx_arr = np.outer(2*idx, [1,1])+np.array([0,1])
-        idx_arr = (np.outer(2*idx, [1,1])+np.array([0,1])).flatten()
-
-
-        # Format data.
-        data_iq = self.get_all_data(nt=nt, nsamp=nsamp, debug=debug)
-        return np.moveaxis(data_iq[:,idx_arr].reshape(-1,len(idx),2),1,0)
-    #return data_iq[:,idx_arr].T.reshape(len(idx),2,-1)
-
-    def get_all_data(self, nt=1, nsamp=10000, debug=False):
-        # nt: number of dma transfers.
-        # idx: from 0..7, index of channel.
-
-        packets = self.transfer(nt=nt, nsamp=nsamp, debug=debug)
-        self.packets = packets
-        # Number of samples per transfer.
-        ns = len(packets[0])
-        
-        # Format data.
-        data_iq = packets[:,:,:16].reshape((-1,16))
-        return data_iq
-
     async def transfer_async(self):
         # DMA data.
         self.dma.recvchannel.transfer(self.buff)
@@ -812,11 +778,20 @@ class AxisPfbSynth4x512V1(SocIp):
         return self.FMIX
     
 class TopSoc(QickSoc):
-    # Constructor.
-    def __init__(self, bitfile=None,
-                 decimation=2, switchSrc="pfbcic", 
-                 streamLength=10000, **kwargs):
-        
+    """
+    System-on-chip interface
+    """
+    def __init__(self, bitfile=None, **kwargs):
+        """
+        Determines the BOARD type (ZCU111 or ZCU216) and loads firmware.
+
+        Parameters:
+            bitfile
+                The bitfile to load; default None loads the correct firmward
+            kwargs
+                Passed to QickSoc
+                Note: after power cycling the board, use force_init_clks=True
+        """    
         self.board = os.environ["BOARD"]
         if self.board == 'ZCU111':
             bitFileName = str(Path(Path(__file__).parent.parent,"mkids_111_4x4096","mkids_4x4096_v4.bit"))
@@ -877,36 +852,6 @@ class TopSoc(QickSoc):
         self.stream.transfer_raw(nsamp=10000, first=True)
         self.chsel.alloff()
 
-        ####################
-        ### Calibrations ###
-        ####################
-        # output gain vs. DDS offset
-        # normalize to the minimum gain in the working band (which is +/- fb/2)
-        # we're going to divide the output gain by this function, so we want the function to be always >=1
-        # (otherwise we might exceed the output range)
-        try:
-            output_freqs, output_gains = np.load("output_gain.npy")
-            mingain = output_gains[:(len(output_gains)+1)//2].min()
-            self.output_gain = interp1d(output_freqs, output_gains/mingain)
-        except FileNotFoundError:
-            self.output_gain = None
-            
-        # output polarity vs. PFB channel
-        try:
-            self.output_signs = np.load("output_sign.npy")
-        except FileNotFoundError:
-            self.output_signs = None
-            
-        # input gain vs. DDS offset
-        try:
-            self.input_gain = interp1d(*np.load("input_gain.npy"))
-        except FileNotFoundError:
-            self.input_gain = None
-            
-        self.PHASE_STEP_OUTPUT = -1.82216429
-        self.PHASE_STEP_INPUT = 0.0524290536
-        #self.PHASE_SLOPE = -4.41828551
-        self.PHASE_SLOPE = -4.5
 
         # eed the max of input and output
         self.DF = max(self.dds_out.DF_DDS,self.ddscic.DF_DDS)
@@ -923,162 +868,18 @@ class TopSoc(QickSoc):
         self.fcOut = self.pfb_out.get_fc()
 
 
-    def round_freq(self, f): # in MHz
-        return np.round(f/self.DF)*self.DF
 
     def set_mixer(self, fmix): # fmix in MHz
-        # Set mixer frequency.
+        """Set mixer frequency in MHz"""
         self.pfb_out.set_fmix(fmix)
         return self.pfb_out.get_fmix()
     
     def get_mixer(self):
+        """Get mixer frequency in MHz"""
         return self.pfb_out.get_fmix()
 
-    def set_outputs(self, freqs, gains, equalize=True): 
-        # freqs in MHz, gain 1 for full range, fi in radians
-        # try to convert to float; if that fails, assume it's a list of floats
-        try:
-            gain_list = [float(gains)]*len(freqs)
-        except TypeError:
-            gain_list = gains
-        assert len(freqs)==len(gain_list)
-        
-        # All channels off.
-        self.dds_out.alloff()
-        pfb_chs, dds_freqs, _, unwrapped_chs = self.pfb_out.freq2ch(freqs, self.pfb_out.get_fmix())
-        if len(set(pfb_chs)) != len(pfb_chs):
-            raise RuntimeError("Output tones map to PFB channels %s, which are not unique"%(str(pfb_chs)))
-        
-        for ch, fdds, gain, unwrapped_ch in zip(pfb_chs, dds_freqs, gain_list, unwrapped_chs):
-            if equalize:
-                equalized_gain = gain * self.output_signs[ch] / self.output_gain(np.abs(fdds)/(self.dds_out.FS_DDS))
-                phase = np.rad2deg(-self.PHASE_STEP_OUTPUT*unwrapped_ch)%360
-            else:
-                equalized_gain = gain
-                phase = 0
-            self.dds_out.ddscfg(ch=ch, f=fdds, g=equalized_gain, fi=phase)
-            
-        # Set the PFB quantization, which sets the PFB dynamic range.
-        # 0 gives you max output power, larger values give you finer control
-        self.pfb_out.qout(0)
-
-    def set_inputs(self, freqs, decimation, downconvert, equalize=True):
-        if isinstance(freqs, list):
-            freqs = np.array(freqs)
-        nfreqs = len(freqs)
-
-        # before we do anything, calculate channel mappings and check for collisions
-        K, dds_freq, pfb_freq, ch = self.pfb_in.freq2ch(freqs)
-        if len(set(K)) < nfreqs:
-            raise RuntimeError("input PFB channels are not unique: %s"%(K))
-
-        streams, stream_idx = self.chsel.ch2idx(K)
-        #if len(set(streamer_ch)) < nfreqs:
-        #    raise RuntimeError("streamer channels are not unique: %s"%(streamer_ch))
-        
-        # Set the PFB quantization, which sets the PFB dynamic range.
-        # this sets how many of the least significant bits are truncated, or something like that
-        # larger values mean a given power will get converted to a smaller number of arbitrary units
-        # the appropriate value depends on the signal strength
-        # if you make this too small, your signal may overflow the range and you will see weird stuff:
-        #     periodic sawtooth-y waveforms in the IQ data, lots of spurious spikes in the frequency spectrum
-        # if you make this too big, your signal-to-noise ratio suffers (eventually your IQ values are all zero)
-        # Values >=12 seem to be equivalent to 0
-        self.pfb_in.qout(7)
-        
-        # Set decimation value.
-        # This also automatically sets the CIC quantization.
-        self.ddscic.decimation(value=decimation)
-
-        # Channel's sampling frequency = bandwidth/decimation
-        fs = self.pfb_in.get_fb()/self.ddscic.get_decimate()
-
-        if downconvert:
-            # Use DDS.
-            self.ddscic.dds_outsel(outsel="product")
-            # Set DDS frequency.
-            for i in range(nfreqs):
-                self.ddscic.set_ddsfreq(ch_id=K[i], f=dds_freq[i])
-            # need to correct by 1.0 if in "product" mode?
-            offset = np.full_like(K, 1.0)
-            fcenter = pfb_freq+dds_freq
-        else:
-            # By-pass DDS product.
-            self.ddscic.dds_outsel(outsel="input")
-            # need to correct offset, which depends on channel
-            #offset = 1.0 if K%2==0 else 0.5
-            offset = 1.0 - 0.5*(K%2)
-            fcenter = pfb_freq
-
-        # Un-mask channels.
-        num_tran, tran_idx = self.chsel.set(K)
-
-        self.input_config = {}
-        self.input_config['fs'] = fs
-        self.input_config['pfb_ch'] = K
-        self.input_config['dds_freq'] = dds_freq
-        self.input_config['center_freq'] = fcenter
-        self.input_config['num_tran'] = num_tran
-        self.input_config['tran_idx'] = tran_idx
-        self.input_config['streams'] = streams
-        self.input_config['stream_idx'] = stream_idx
-
-        self.input_config['offset'] = offset
-        if equalize:
-            gain = self.input_gain(np.abs(dds_freq/self.pfb_in.fb))
-        else:
-            gain = 1
-        phase = (self.PHASE_SLOPE*freqs + self.PHASE_STEP_INPUT*ch)
-        self.input_config['correction'] = np.exp(-1j*phase)/gain
-
-    def measure(self, freqs, gain, decimation=2, downconvert=True, truncate=200, equalize=True, average=True):
-        self.set_outputs(freqs, gain, equalize=equalize)
-        self.set_inputs(freqs, decimation, downconvert, equalize=equalize)
-        return self.read(truncate=truncate, equalize=equalize, average=average)
-
-    def read(self, truncate=200, equalize=True, average=True, nt=1, nsamp=10000):
-        # nsamp * number of PFB channels * decimation / ADC sampling freq
-        # example: 1e4*1024*250/2457.6e6 = ~1 sec
-        num_tran = self.input_config['num_tran']
-        tran_idx = self.input_config['tran_idx']
-        streams = self.input_config['streams']
-        stream_idx = self.input_config['stream_idx']
-        offset = self.input_config['offset']
-        correction = self.input_config['correction']
-
-        # Transfer data.
-        x_buf = self.stream.get_data_multi(idx=streams, nt=nt, nsamp=nsamp*num_tran)[:,truncate*num_tran:]
-        x_buf = x_buf.reshape(len(streams), -1, num_tran, 2)[stream_idx, :, tran_idx, :]
-        if average:
-            results = x_buf.mean(axis=1)
-            results += offset[:, np.newaxis]
-            results_complex = results.dot([1, 1j])
-            if equalize:
-                results_complex *= correction
-            return results_complex
-        else:
-            return x_buf + offset[:, np.newaxis, np.newaxis]
-
-    def calib_phase(self, freqs, results_complex, dry_run=False):
-        """Adjust the phase calibration using data from a frequency sweep.
-
-        Parameters
-        ----------
-        freqs : array of float
-            frequencies, in MHz
-        results_complex : array of complex float
-            IQ values
-        """
-        a = np.vstack([freqs, np.ones_like(freqs)]).T
-        phase_correction = np.linalg.lstsq(a, np.unwrap(np.angle(results_complex)), rcond=None)[0][0]
-        print("adjusting phase slope by %.4f rad/MHz"%(phase_correction))
-        if dry_run:
-            print("dry run, keeping value of %.4f rad/MHz"%(self.PHASE_SLOPE))
-        else:
-            self.PHASE_SLOPE += phase_correction
-            print("old value %.4f rad/MHz, new value %.4f rad/MHz"%(self.PHASE_SLOPE, self.PHASE_SLOPE+phase_correction))
-
     def info(self, stream=sys.stdout):
+        """ Print information about the system to stream, default sys.stdout"""
         print("Board model: %s"%self.board, file=stream)
         print("Input:", file=stream)
         print("         number of input channels: %7d"%self.nInCh)
@@ -1113,11 +914,6 @@ class TopSoc(QickSoc):
             ch : int
                 the PFB channel
         """  
-        #N = self.pfb_in.N
-        #fc = self.fsIn/N
-        #k =np.round(frequency/fc)
-        #ch = (np.mod(k+N/2, N)).astype(int)
-        #return ch
         K, dds_freq, pdb_freq, ch = self.pfb_in.freq2ch(frequency)
         return K
 
@@ -1140,14 +936,6 @@ class TopSoc(QickSoc):
             offset : offset
                 offset from the center frequency, in MHz
         """  
-
-        #N = self.pfb_in.N
-        #fc = self.fsIn/N
-        #k = np.round(frequency/fc)
-        #ch = (np.mod(k+N/2, N)).astype(int)
-        #fCenter = k*fc
-        #offset = frequency-fCenter
-        #return ch,offset
         K, dds_freq, pdb_freq, ch = self.pfb_in.freq2ch(frequency)
         return K,dds_freq
 
@@ -1166,8 +954,6 @@ class TopSoc(QickSoc):
             frequency at the center of the channel (MHz)
         """
    
-        #fCenter = np.mod(ch*self.fsIn/self.pfb_in.N + self.fsIn/2, self.fsIn)
-    
         try:
             iterator = iter(ch)
         except TypeError:
@@ -1179,6 +965,23 @@ class TopSoc(QickSoc):
         return fCenter
     
     def inFreq2NtranStream(self,freqs):
+        """
+            Return the transaction stream that contains the frequency, to
+            be used in unpacking data packets
+
+            Parameters
+            ----------
+            frequency : double
+                in MHz
+
+            Returns
+            -------
+                ntran : int
+                    the transaction number channel
+                stream : int
+                    the stream number
+        """  
+ 
         inChs = self.inFreq2ch(freqs)
         ntran,stream = np.divmod(inChs.astype(int), self.chsel.L, dtype=int)
         return ntran,stream
