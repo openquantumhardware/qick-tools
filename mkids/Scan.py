@@ -66,6 +66,8 @@ class Scan():
             if verbose: 
                 print("Scan.setTones: ",ch,fdds,amplitude,unwrapped_ch,fiDeg)
             self.soc.dds_out.ddscfg(ch=ch, f=fdds, g=amplitude, fi=fiDeg)
+        self.outChs = pfb_chs
+        self.outDds = dds_freqs
         self.soc.pfb_out.qout(pfbOutQout)
         self.toneFreqs = freqs
         self.toneAmplitudes = amplitudes
@@ -100,15 +102,15 @@ class Scan():
         """
         if verbose:
             print("in Scan.py prepRead:  self.toneFreqs=",self.toneFreqs)
-        inCh,offset = self.soc.inFreq2chOffset(self.toneFreqs)
+        self.inChs,self.inOffsets = self.soc.inFreq2chOffset(self.toneFreqs)
         self.soc.pfb_in.qout(pfbInQout)
         self.soc.ddscic.decimation(value=decimation)
         self.soc.ddscic.dds_outsel(outsel="product")
         for i in range(len(self.toneFreqs)):
-            self.soc.ddscic.set_ddsfreq(ch_id=inCh[i], f=offset[i])
+            self.soc.ddscic.set_ddsfreq(ch_id=self.inChs[i], f=self.inOffsets[i])
             if verbose:
-                print("Scan.prepRead: i, ch_id, dds_freq =",i, inCh[i], offset[i])
-        _,_ = self.soc.chsel.set(inCh, debug=debugChselSet)
+                print("Scan.prepRead: i, ch_id, dds_freq =",i, self.inChs[i], self.inOffset[i])
+        _,_ = self.soc.chsel.set(self.inChs, debug=debugChselSet)
         self.ntranByTone, self.streamByTone = self.soc.inFreq2NtranStream(self.toneFreqs)
         if verbose:
             print("self.ntranByTone =",self.ntranByTone)
