@@ -79,7 +79,7 @@ class AxisPfb4x4096V1(SocIp):
         
 
 class AxisPfb4x1024V1(SocIp):
-    """input PFB
+    """input PFB 
     """
     bindto = ['user.org:user:axis_pfb_4x1024_v1:1.0']
     REGISTERS = {'qout_reg' : 0}
@@ -212,10 +212,15 @@ class AxisDdsCicV2(SocIp):
         self.dds_sync_reg = 0
         self.cic_rst_reg  = 0
         
+    def dds_stop(self):
+        self.dds_sync_reg = 1
+        self.cic_rst_reg  = 1
+
     def dds_outsel(self, outsel="product"):
         self.dds_outsel_reg = {"product": 0,
                 "dds": 1,
-                "input":2}[outsel]
+                "input":2,
+                "zero":3}[outsel]
             
     def decimate(self, decimate=4):
         # Sanity check.
@@ -371,6 +376,9 @@ class AxisChSelPfbV2(SocIp):
         unique_ch = sorted(set(streamer_ch))
         ch_index = np.array([unique_ch.index(i) for i in streamer_ch])
         return np.array(unique_ch), ch_index
+
+    def ch2idx_orig(self,ch):
+        return np.mod(ch,8)
 
 class AxisStreamerV1(SocIp):
     # AXIS_Streamer V1 registers.
@@ -534,6 +542,75 @@ class AxisStreamerV1(SocIp):
             data[i,:,:] = self.buff.reshape((-1, self.NS_TR))[:self.nsamp_reg,:self.NS_NI]
 
         return data
+
+    def transfer_orig(self, nt=1, debug=False):
+        # Data structure:
+        # First dimention: number of dma transfers.
+        # Second dimension: number of streamer transactions.
+        # Third dimension: Number of I + Number of Q + Index (17 samples, 16-bit each).
+        data = np.zeros((nt,self.nsamp_reg,self.NS_NI))
+        # Stash a copy of the 
+        self.third = []
+
+        for i in np.arange(nt):
+            if debug:
+                print('AxisStreamer: Checking DMA idle')
+
+            # DMA must be Idle.
+            if not self.idle():
+                raise RuntimeError('DMA Channel must be IDLE to start new transfer')
+
+            if debug:
+                print('AxisStreamer: Starting DMA')
+        
+            # Start DMA.
+            self.dma.recvchannel.transfer(self.buff)
+
+            # Wait until DMA shows idle to start transferring.
+            while True:
+                if not self.idle():
+                    break;
+
+            if debug:
+                print('AxisStreamer: Starting streamer')
+
+            # Start streamer.
+            self.start()
+
+            if debug:
+                print('AxisStreamer: Waiting DMA to finish')
+            
+            # Wait until transfer is done.
+            self.dma.recvchannel.wait()
+
+            if debug:
+                print('AxisStreamer: Stopping streamer')
+            
+            # Stop streamer.
+            self.stop()
+                
+            # Data format:
+            # Each streamer transaction is 512 bits. It contains 8 samples (32-bit each) plus 1 sample (16-bit) for TUSER.
+            # The upper 15 samples are filled with zeros.        
+            data[i,:,:] = self.buff.reshape((self.nsamp_reg, -1))[:,:self.NS_NI]
+            self.third.append(data[:,:,16])
+
+        return data
+    
+    def get_data(self, nt=1, idx=0, debug=False):
+        # nt: number of dma transfers.
+        # idx: from 0..7, index of channel.
+
+        packets = self.transfer_orig(nt=nt, debug=debug)
+            
+        # Number of samples per transfer.
+        ns = len(packets[0])
+        
+        # Format data.
+        data_iq = packets[:,:,:16].reshape((-1,16)).T
+        xi,xq = data_iq[2*idx:2*idx+2]        
+                
+        return [xi,xq]
     
     async def transfer_async(self):
         # DMA data.
@@ -936,6 +1013,7 @@ class TopSoc(QickSoc):
             offset : offset
                 offset from the center frequency, in MHz
         """  
+        
         K, dds_freq, pdb_freq, ch = self.pfb_in.freq2ch(frequency)
         return K,dds_freq
 
@@ -964,6 +1042,17 @@ class TopSoc(QickSoc):
                 fCenter[i] = self.pfb_in.ch2freq(ch[i])                        
         return fCenter
     
+    def fAliasedFromFTone(self, fTone):
+        fn = self.fsIn/2
+        nZone = int(fTone/fn) + 1
+        if np.mod(nZone,2):
+            #print(" ODD nZone =",nZone)
+            fAliased = fTone - (nZone-1)*fn
+        else:
+            #print("EVEN nZone =",nZone)
+            fAliased = nZone*fn - fTone
+        return fAliased
+
     def inFreq2NtranStream(self,freqs):
         """
             Return the transaction stream that contains the frequency, to
@@ -981,7 +1070,11 @@ class TopSoc(QickSoc):
                 stream : int
                     the stream number
         """  
- 
+         # Deal with frequencies outside of the first Nyquist zone
+        fas = np.zeros(len(freqs))
+        fn = self.fsIn/2
+        for i,freq in enumerate(freqs):
+            fas[i] = self.fAliasedFromFTone(freq)
         inChs = self.inFreq2ch(freqs)
         ntran,stream = np.divmod(inChs.astype(int), self.chsel.L, dtype=int)
         return ntran,stream
