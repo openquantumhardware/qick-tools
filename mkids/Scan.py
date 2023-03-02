@@ -582,6 +582,6 @@ def _unwrapPhis(phis, sign=1):
     """
     uphis = sign*(phis.copy())
     for i in range(1,len(uphis)):
-        if uphis[i-1] > uphis[i]:
+        if uphis[i-1] > uphis[i] + np.pi:
             uphis[i:] += 2*np.pi
     return sign*uphis
