@@ -4,6 +4,8 @@ import numpy as np
 from numpy.polynomial.polynomial import Polynomial
 from tqdm.notebook import trange, tqdm
 from scipy.interpolate import interp1d
+from scipy.optimize import minimize
+
 """
 The firmware chooses which input channels to read out.
 
@@ -448,22 +450,45 @@ class Scan():
                       iBegin, nsamp, pfbOutQout, doProgress=doProgress)
        
         iTone = 0
-        dfs = self.mndScan['dfs']
-        fis = np.angle(self.mndScan['xs'][:,iTone])
-        ufis = _unwrapPhis(fis)
-        fit = Polynomial.fit(dfs, ufis, 1)
-        nominalDelay = fit.convert().coef[1]
+        
+        self.dfs = self.mndScan['dfs']
+        self.xs = self.mndScan['xs'][:,0]
+        phi0 = np.angle(self.xs[len(self.xs)//2])
+        guess = np.array([phi0, 0.0])
+        
+        rv = minimize(_minimizeDelayFun, guess, args=(self.dfs, self.xs))
+        nominalDelay = rv.x[1]
         if doPlot:
-                #plt.plot(dfs,fis, ".-")
-                fig,ax = plt.subplots(2,1,sharex=True)
-                ax[0].plot(dfs, ufis, ".",label="data")
-                ax[0].plot(dfs, fit(dfs), label="fit")
-                ax[0].set_ylabel("unwrapped phase [Radians]")
-                ax[0].legend()
-                ax[1].plot(dfs, ufis-fit(dfs),'.')
-                ax[1].set_ylabel("fit residual [Radians]")
-                ax[1].set_xlabel("f offset in out channel")
-                plt.suptitle("outCh=%d DDSDelay = %f $\mu$sec"%(outCh,nominalDelay))
+            phi0 = rv.x[0]
+            delay = rv.x[1]
+            dfFits = np.linspace(self.dfs.min(),self.dfs.max(),100)
+            xFits = np.exp(1j*(phi0 + delay*dfFits))
+            plt.plot(self.dfs,np.real(self.xs)/np.abs(self.xs),'b.', label="data I")
+            plt.plot(dfFits, np.real(xFits), 'b', alpha=0.4, label="fit I")
+            plt.plot(self.dfs,np.imag(self.xs)/np.abs(self.xs),'r.', label="data Q")
+            plt.plot(dfFits, np.imag(xFits), 'r', alpha=0.4, label="fit Q")
+            plt.legend()
+            plt.suptitle("outCh=%d 2$\pi$DDSDelay = %f $\mu$sec"%(outCh,nominalDelay))
+            plt.xlabel("dfs (MHz)")
+            plt.ylabel("Normalized I,Q")
+        return nominalDelay
+            
+        #self.dfs = self.mndScan['dfs']
+        #self.fis = np.angle(self.mndScan['xs'][:,iTone])
+        #self.ufis = _unwrapPhis(self.fis)
+        #fit = Polynomial.fit(self.dfs, self.ufis, 1)
+        #nominalDelay = fit.convert().coef[1]
+        #if doPlot:
+        #        #plt.plot(dfs,fis, ".-")
+        #        fig,ax = plt.subplots(2,1,sharex=True)
+        #        ax[0].plot(self.dfs, self.ufis, ".",label="data")
+        #        ax[0].plot(self.dfs, fit(self.dfs), label="fit")
+        #        ax[0].set_ylabel("unwrapped phase [Radians]")
+        #        ax[0].legend()
+        #        ax[1].plot(self.dfs, self.ufis-fit(self.dfs),'.')
+        #        ax[1].set_ylabel("fit residual [Radians]")
+        #        ax[1].set_xlabel("f offset in out channel")
+        #        plt.suptitle("outCh=%d DDSDelay = %f $\mu$sec"%(outCh,nominalDelay))
         return nominalDelay
 
 def applyCalibration(fscan, calibration, amplitudeMax=30000):
@@ -585,3 +610,10 @@ def _unwrapPhis(phis, sign=1):
         if uphis[i-1] > uphis[i]:
             uphis[i:] += 2*np.pi
     return sign*uphis
+
+def _minimizeDelayFun(pars, dfs, xs):
+    phiFits = pars[0] + pars[1]*dfs
+    phiData = np.angle(xs)
+    dPhis = np.angle(np.exp(1j*(phiFits-phiData)))
+    retval = np.power(dPhis,2).mean()
+    return retval
