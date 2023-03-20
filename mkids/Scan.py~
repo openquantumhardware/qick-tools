@@ -453,21 +453,29 @@ class Scan():
         iTone = 0
         
         self.dfs = self.mndScan['dfs']
+<<<<<<< HEAD
         
         fTone = freqs[0]
         freqs = fTone + self.mndScan['dfs']
         aliasedFreqs = self.soc.fAliasedFromFTone(freqs)
         aliasedFTone = self.soc.fAliasedFromFToneScalar(fTone)
         self.dfsAliased = aliasedFreqs - aliasedFTone
+=======
+>>>>>>> 25b3ff1d07c5edf74e8254fec28d6c3139832392
         self.xs = self.mndScan['xs'][:,0]
         phi0 = np.angle(self.xs[len(self.xs)//2])
         guess = np.array([phi0, 0.0])
         
+<<<<<<< HEAD
         rv = minimize(_minimizeDelayFun, guess, args=(self.dfsAliased, self.xs))
+=======
+        rv = minimize(_minimizeDelayFun, guess, args=(self.dfs, self.xs))
+>>>>>>> 25b3ff1d07c5edf74e8254fec28d6c3139832392
         nominalDelay = rv.x[1]
         if doPlot:
             phi0 = rv.x[0]
             delay = rv.x[1]
+<<<<<<< HEAD
             dfFits = np.linspace(self.dfsAliased.min(),self.dfsAliased.max(),100)
             xFits = np.exp(1j*(phi0 + delay*dfFits))
             plt.plot(self.dfsAliased,np.real(self.xs)/np.abs(self.xs),'b.', label="data I")
@@ -476,6 +484,16 @@ class Scan():
             plt.plot(dfFits, np.imag(xFits), 'r', alpha=0.4, label="fit Q")
             plt.legend()
             plt.suptitle("fMixer=%.1f outCh=%d 2$\pi$DDSDelay = %f $\mu$sec"%(self.soc.get_mixer(),outCh,nominalDelay))
+=======
+            dfFits = np.linspace(self.dfs.min(),self.dfs.max(),100)
+            xFits = np.exp(1j*(phi0 + delay*dfFits))
+            plt.plot(self.dfs,np.real(self.xs)/np.abs(self.xs),'b.', label="data I")
+            plt.plot(dfFits, np.real(xFits), 'b', alpha=0.4, label="fit I")
+            plt.plot(self.dfs,np.imag(self.xs)/np.abs(self.xs),'r.', label="data Q")
+            plt.plot(dfFits, np.imag(xFits), 'r', alpha=0.4, label="fit Q")
+            plt.legend()
+            plt.suptitle("outCh=%d 2$\pi$DDSDelay = %f $\mu$sec"%(outCh,nominalDelay))
+>>>>>>> 25b3ff1d07c5edf74e8254fec28d6c3139832392
             plt.xlabel("dfs (MHz)")
             plt.ylabel("Normalized I,Q")
         return nominalDelay

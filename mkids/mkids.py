@@ -1042,7 +1042,7 @@ class TopSoc(QickSoc):
                 fCenter[i] = self.pfb_in.ch2freq(ch[i])                        
         return fCenter
     
-    def fAliasedFromFTone(self, fTone):
+    def fAliasedFromFToneScalar(self, fTone):
         fn = self.fsIn/2
         nZone = int(fTone/fn) + 1
         if np.mod(nZone,2):
@@ -1051,6 +1051,16 @@ class TopSoc(QickSoc):
         else:
             #print("EVEN nZone =",nZone)
             fAliased = nZone*fn - fTone
+        return fAliased
+
+    def fAliasedFromFTone(self, fTone):
+        fn = self.fsIn/2
+
+        nZone = ((fTone/fn) + 1).astype(int)
+
+        fAliased = nZone*fn - fTone # This is for the even-numbered Nyquist zones
+        oddInds = np.mod(nZone,2) == 1
+        fAliased[oddInds] =  fTone[oddInds] - (nZone[oddInds]-1)*fn
         return fAliased
 
     def inFreq2NtranStream(self,freqs):
@@ -1070,12 +1080,8 @@ class TopSoc(QickSoc):
                 stream : int
                     the stream number
         """  
-         # Deal with frequencies outside of the first Nyquist zone
-        fas = np.zeros(len(freqs))
-        fn = self.fsIn/2
-        for i,freq in enumerate(freqs):
-            fas[i] = self.fAliasedFromFTone(freq)
-        inChs = self.inFreq2ch(freqs)
+        freqsAliased = self.fAliasedFromFTone(freqs)
+        inChs = self.inFreq2ch(freqsAliased)
         ntran,stream = np.divmod(inChs.astype(int), self.chsel.L, dtype=int)
         return ntran,stream
         
@@ -1092,7 +1098,7 @@ class TopSoc(QickSoc):
         -------
             ch : int
                 the PFB channel
-        """  
+        """
         f = frequency# - self.get_mixer()
         ch = self.pfb_out.freq2ch(f, self.get_mixer())[0]
         return ch
