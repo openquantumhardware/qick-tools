@@ -34,3 +34,19 @@ There are 2 Synthesis Chains with the following components:
 * DAC at 4.096 GSPS, 4 times interpolation, fine mixer.
 * Single-tone signal generator.
 
+########################
+### Use Instructions ###
+########################
+
+* Download and install the QICK library:
+
+https://github.com/openquantumhardware/qick
+
+* Copy the files in the pynq directory in your board.
+* Run the provided notebook for examples.
+
+Any concerns/comments are welcomed!!
+
+Leandro Stefanazzi
+lstefana@fnal.gov
+
