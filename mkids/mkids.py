@@ -257,7 +257,7 @@ class AxisDdsCicV2(SocIp):
         # Compute register value.
         #TODO: do this frequency matching correctly
         ki = int(round(f/(self.DF_DDS*2)))*2
-        
+         
         # Write value into hardware.
         self.addr_nchan_reg = ch_id
         self.addr_pinc_reg = ki
