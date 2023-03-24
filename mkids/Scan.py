@@ -422,7 +422,8 @@ class Scan():
             interp = interp1d(sFreqs[inds], sxs[inds], bounds_error=False, fill_value="extrapolate")
             cInterps.append(interp)
         calib = {"fMixer":fMixer, "fList":fList, "cInterps":cInterps, 
-                 "fMin":fMin, "fMax":fMax, "fscan":fscan, "nominalDelay":nominalDelay} 
+                 "fMin":fMin, "fMax":fMax, "fscan":fscan,
+                 "nominalDelay":nominalDelay} 
         return calib
     
     def measureNominalDelay(self, outCh, nf=20, nt=1, doProgress=False, doPlot=False, decimation=32, iBegin=500, pfbOutQout=0, nsamp=10000):
@@ -565,7 +566,7 @@ class Scan():
             for i, freq in enumerate(freqs):
                 iCalib = np.searchsorted(calibration['fList'], freq)-1 
                 xCalib[i] = calibration['cInterps'][iCalib](freq)
-            gain = amplitudeMax/np.abs(xCalib)
+            gain = (0.9/len(freqs))*amplitudeMax/np.abs(xCalib)
             fscanCalib['xs'][:,iTone] *= gain
             dfi = np.angle(xCalib)
             xs = fscanCalib['xs'][:,iTone]
@@ -573,7 +574,7 @@ class Scan():
         return fscanCalib                                                     
 
 
-def fscanPlot(fscan, iTone):
+def fscanPlot(fscan, iTone, millirad=False, db=False):
     """
     plot the amplitude and phase near one tone of the scan
     
@@ -588,10 +589,20 @@ def fscanPlot(fscan, iTone):
     dfs = fscan["dfs"]
     xs = fscan['xs'][:,iTone]
     fig,ax = plt.subplots(2,1,sharex=True)
-    ax[0].plot(dfs, np.abs(xs), '-o')
-    ax[0].set_ylabel("amplitude [ADUs]")
-    ax[1].plot(dfs, np.angle(xs), '-o')
-    ax[1].set_ylabel("phase [Radians]")
+    if db:
+        ax[0].plot(dfs, 20*np.log10(np.abs(xs)), '-o')
+        ax[0].set_ylabel("amplitude [db]")
+    else:
+        ax[0].plot(dfs, np.abs(xs), '-o')
+        ax[0].set_ylabel("amplitude [ADUs]")
+        
+    if millirad:
+        ax[1].plot(dfs, 1000*np.angle(xs), '-o')
+        ax[1].set_ylabel("phase [millirad]")
+    else:
+        ax[1].plot(dfs, np.angle(xs), '-o')
+        ax[1].set_ylabel("phase [Radians]")
+        
     ax[1].set_xlabel("Frequency-%f [MHz]"%fscan["freqs"][iTone])
     
 def fscanToSpectrum(fscan):
@@ -638,3 +649,52 @@ def _minimizeDelayFun(pars, dfs, xs):
     dPhis = np.angle(np.exp(1j*(phiFits-phiData)))
     retval = np.power(dPhis,2).mean()
     return retval
+
+def plotCalibrationAndScan(fStart, fEnd, calibration, scan=None, fList=None, doIQ=False):
+    if fList is None:
+        fList = calibration['fList']
+    cSpectrum = fscanToSpectrum(calibration['fscan'])
+    cInds = (cSpectrum[0] > fStart ) & (cSpectrum[0] < fEnd)
+    cAmp = cSpectrum[1]
+    cPha = cSpectrum[2]
+
+    if scan is not None:
+        sSpectrum = fscanToSpectrum(scan)
+        sInds = (sSpectrum[0] > fStart ) & (sSpectrum[0] < fEnd)
+        sAmp = sSpectrum[1]
+        sPha = sSpectrum[2]
+
+    
+    fig,ax = plt.subplots(2,1,sharex=True)
+    
+    if doIQ:
+        cxs = cAmp[cInds]*np.exp(1j*cPha[cInds])
+        ctuple = (np.real(cxs), np.imag(cxs))
+        if scan is not None:
+            sxs = sAmp[sInds]*np.exp(1j*sPha[sInds])
+            stuple = (np.real(sxs), np.imag(sxs))
+        ylabels = ("I [ADUs]","Q [ADUs]")
+    else:
+        ctuple = (cAmp[cInds],cPha[cInds])
+        if scan is not None:
+            stuple = (sAmp[sInds],sPha[sInds])
+        ylabels = ("Amplitude [ADUs]","Phase [Radians]")
+        
+    ax[0].plot(cSpectrum[0][cInds],ctuple[0], ',', label="calibration")
+    ax[1].plot(cSpectrum[0][cInds],ctuple[1], ',', label="calibration")
+    if scan is not None:
+        ax[0].plot(sSpectrum[0][sInds],stuple[0], ',', label="scan")
+        ax[1].plot(sSpectrum[0][sInds],stuple[1], ',', label="scan")
+    if fList is not None:
+        for f in fList:
+            ax[0].axvline(f,color='r', alpha=0.2)
+            ax[1].axvline(f,color='r', alpha=0.2)
+    ax[1].set_xlabel("frequency (MHz)")
+    ax[0].set_ylabel(ylabels[0])
+    ax[1].set_ylabel(ylabels[1])
+    ax[0].legend()
+    ax[1].legend()
+    
+    #freqs,amps,fis = Scan.fscanToSpectrum(fscan)
+    
+    plt.xlim((fStart,fEnd))
