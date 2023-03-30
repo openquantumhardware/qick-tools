@@ -197,7 +197,8 @@ class Scan():
                 if verbose: print("   nt, iTone , x.shape", it, iTone, temp.shape)
 
                 if subtractInputPhase:
-                    temp = self._subtractInputPhase(temp, -self.toneFis[iTone])
+                    temp = self._subtractInputPhase(temp, 
+                                                self.toneFis[iTone])
                 xsByTone.append(temp)
             xsByNtTone.append(xsByTone)
         if average:
@@ -536,6 +537,7 @@ class Scan():
             freqs = fscan['dfs'] + fscan['freqs'][iTone]
             aliasedFreqs = self.soc.fAliasedFromFTone(freqs)
             fscan['xs'][:,iTone] = np.abs(xs)*np.exp( 1j*(np.angle(xs) - delay*aliasedFreqs) )
+            #fscan['xs'][:,iTone] = np.abs(xs)*np.exp( 1j*(np.angle(xs) - delay*freqs) )
 
     def applyCalibration(self, fscan, calibration, amplitudeMax=30000):
         """
