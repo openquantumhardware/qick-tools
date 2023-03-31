@@ -1,0 +1,52 @@
+Projects for MKIDs or generic spectrum analysis instruments.
+
+####################
+### mkids_4x4_v1 ###
+####################
+
+There are 4 Analysis Chains. Each chain has the following components:
+* ADC at 4.096 GSPS, 4 times decimation, fine mixer.
+* 1024 Channels PFBs.
+* 1 DDS per PFB channel.
+* 1 CIC decimation filter (1-250) per PFB channel.
+
+There are 4 Synthesis Chains. Each chain has the following components:
+* DAC at 4.096 GSPS, 4 times interpolation, fine mixer.
+* 512 Channels PFBs.
+* 1 DDS per PFB channel.
+
+####################
+### mkids_4x4_v2 ###
+####################
+
+There are 4 Analysis Chain. Each chain has the following components:
+* ADC at 4.096 GSPS, 4 times decimation, fine mixer.
+* 1024 Channels PFBs.
+* 1 DDS per PFB channel.
+* 1 CIC decimation filter (1-250) per PFB channel.
+
+There are 2 Synthesis Chains with the following components: 
+* DAC at 4.096 GSPS, 4 times interpolation, fine mixer.
+* 512 Channels PFBs.
+* 1 DDS per PFB channel.
+
+There are 2 Synthesis Chains with the following components: 
+* DAC at 4.096 GSPS, 4 times interpolation, fine mixer.
+* Single-tone signal generator.
+
+########################
+### Use Instructions ###
+########################
+
+* Download and install the QICK library:
+
+https://github.com/openquantumhardware/qick
+
+* Copy the files in the pynq directory in your board.
+* Run the provided notebook for examples.
+
+Any concerns/comments are welcomed!!
+
+Leandro Stefanazzi
+lstefana@fnal.gov
+

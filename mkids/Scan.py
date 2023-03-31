@@ -4,6 +4,8 @@ import numpy as np
 from numpy.polynomial.polynomial import Polynomial
 from tqdm.notebook import trange, tqdm
 from scipy.interpolate import interp1d
+from scipy.optimize import minimize
+
 """
 The firmware chooses which input channels to read out.
 
@@ -103,8 +105,9 @@ class Scan():
         if verbose:
             print("in Scan.py prepRead:  self.toneFreqs=",self.toneFreqs)
         self.aliasedToneFreqs = np.zeros(len(self.toneFreqs))
-        for i, freq in enumerate(self.toneFreqs):
-            self.aliasedToneFreqs[i] = self.soc.fAliasedFromFTone(freq)
+        #for i, freq in enumerate(self.toneFreqs):
+        #    self.aliasedToneFreqs[i] = self.soc.fAliasedFromFTone(freq)
+        self.aliasedToneFreqs = self.soc.fAliasedFromFTone(self.toneFreqs)
         self.inChs,self.inOffsets = self.soc.inFreq2chOffset(self.aliasedToneFreqs)
         self.soc.pfb_in.qout(pfbInQout)
         self.soc.ddscic.decimation(value=decimation)
@@ -194,8 +197,7 @@ class Scan():
                 if verbose: print("   nt, iTone , x.shape", it, iTone, temp.shape)
 
                 if subtractInputPhase:
-                    temp = self._subtractInputPhase(temp, self.toneFis[iTone])
-
+                    temp = self._subtractInputPhase(temp, -self.toneFis[iTone])
                 xsByTone.append(temp)
             xsByNtTone.append(xsByTone)
         if average:
@@ -299,7 +301,7 @@ class Scan():
                 "xs": xs
                }
     
-    def makeFList(self, fMixer, fMin, fMax):
+    def makeFList(self, fMixer, fMin, fMax, verbose=False):
         """
         For a frequency range, make a list of frequencies at boundaries where the measure complex values are discontinuous
 
@@ -320,9 +322,17 @@ class Scan():
         self.soc.set_mixer(fMixer)
         fList = []
         # Add boundaries of input channels to fList
-        
         freq = self.soc.inCh2FreqCenter(self.soc.inFreq2ch(fMin)) -  self.soc.fcIn/2
+        nZoneMin = self.soc.nZoneFromFToneScalar(fMin)
+        freq += (nZoneMin-1)*self.soc.fsIn/2
+        
         fEnd = self.soc.inCh2FreqCenter(self.soc.inFreq2ch(fMax)) +  self.soc.fcIn/2
+        nZoneMax = self.soc.nZoneFromFToneScalar(fMax)
+        fEnd += (nZoneMax-1)*self.soc.fsIn/2
+        
+        #freq = max(0, fMin - self.soc.fcIn)
+        #fEnd = fMax + self.soc.fcIn
+        if verbose: print('input boundaries  freq=%.2f fEnd=%.2f'%(freq, fEnd))
         while True:
             fList.append(freq)
             freq += self.soc.fcIn
@@ -390,13 +400,17 @@ class Scan():
         amps = np.ones(len(freqs))*0.9/len(freqs)
         np.random.seed(randSeed)
         fis = np.random.uniform(0, 2*np.pi, len(freqs))
+        if verbose:
+            for iTone, freq in enumerate(freqs):
+                print("iTone=%d freq=%7.2f amp=%4.2f fi=%5.3f"%(iTone,freqs[iTone], amps[iTone], fis[iTone]))
         bandwidth = self.soc.fcOut * (1-1/nf) 
         fscan = self.fscan(freqs, amps, fis, 
                            bandwidth, nf, decimation, 
                            nt, iBegin, nsamp,
-                           pfbOutQout, verbose=verbose, doProgress=doProgress)
+                           pfbOutQout, verbose=verbose, 
+                           doProgress=doProgress)
         if nominalDelay is not None:
-            applyDelay(fscan, nominalDelay)
+            self.applyDelay(fscan, nominalDelay)
         fList = self.makeFList(fMixer, fMin, fMax)
         sFreqs, fAmps, sFis = fscanToSpectrum(fscan)
         sxs = fAmps*np.exp(1j*sFis)
@@ -408,7 +422,8 @@ class Scan():
             interp = interp1d(sFreqs[inds], sxs[inds], bounds_error=False, fill_value="extrapolate")
             cInterps.append(interp)
         calib = {"fMixer":fMixer, "fList":fList, "cInterps":cInterps, 
-                 "fMin":fMin, "fMax":fMax, "fscan":fscan, "nominalDelay":nominalDelay} 
+                 "fMin":fMin, "fMax":fMax, "fscan":fscan,
+                 "nominalDelay":nominalDelay} 
         return calib
     
     def measureNominalDelay(self, outCh, nf=20, nt=1, doProgress=False, doPlot=False, decimation=32, iBegin=500, pfbOutQout=0, nsamp=10000):
@@ -448,62 +463,118 @@ class Scan():
                       iBegin, nsamp, pfbOutQout, doProgress=doProgress)
        
         iTone = 0
-        dfs = self.mndScan['dfs']
-        fis = np.angle(self.mndScan['xs'][:,iTone])
-        ufis = _unwrapPhis(fis)
-        fit = Polynomial.fit(dfs, ufis, 1)
-        nominalDelay = fit.convert().coef[1]
+        
+        self.dfs = self.mndScan['dfs']
+        
+        fTone = freqs[0]
+        freqs = fTone + self.mndScan['dfs']
+        aliasedFreqs = self.soc.fAliasedFromFTone(freqs)
+        aliasedFTone = self.soc.fAliasedFromFToneScalar(fTone)
+        self.dfsAliased = aliasedFreqs - aliasedFTone
+        self.xs = self.mndScan['xs'][:,0]
+        phi0 = np.angle(self.xs[len(self.xs)//2])
+        guess = np.array([phi0, 0.0])
+        
+        rv = minimize(_minimizeDelayFun, guess, args=(self.dfsAliased, self.xs))
+        nominalDelay = rv.x[1]
         if doPlot:
-                #plt.plot(dfs,fis, ".-")
-                fig,ax = plt.subplots(2,1,sharex=True)
-                ax[0].plot(dfs, ufis, ".",label="data")
-                ax[0].plot(dfs, fit(dfs), label="fit")
-                ax[0].set_ylabel("unwrapped phase [Radians]")
-                ax[0].legend()
-                ax[1].plot(dfs, ufis-fit(dfs),'.')
-                ax[1].set_ylabel("fit residual [Radians]")
-                ax[1].set_xlabel("f offset in out channel")
-                plt.suptitle("outCh=%d DDSDelay = %f $\mu$sec"%(outCh,nominalDelay))
+            phi0 = rv.x[0]
+            delay = rv.x[1]
+            dfFits = np.linspace(self.dfsAliased.min(),self.dfsAliased.max(),100)
+            xFits = np.exp(1j*(phi0 + delay*dfFits))
+            plt.plot(self.dfsAliased,np.real(self.xs)/np.abs(self.xs),'b.', label="data I")
+            plt.plot(dfFits, np.real(xFits), 'b', alpha=0.4, label="fit I")
+            plt.plot(self.dfsAliased,np.imag(self.xs)/np.abs(self.xs),'r.', label="data Q")
+            plt.plot(dfFits, np.imag(xFits), 'r', alpha=0.4, label="fit Q")
+            plt.legend()
+            plt.suptitle("fMixer=%.1f outCh=%d 2$\pi$DDSDelay = %f $\mu$sec"%(self.soc.get_mixer(),outCh,nominalDelay))
+            plt.xlabel("dfs (MHz)")
+            plt.ylabel("Normalized I,Q")
+        return nominalDelay
+            
+        #self.dfs = self.mndScan['dfs']
+        #self.fis = np.angle(self.mndScan['xs'][:,iTone])
+        #self.ufis = _unwrapPhis(self.fis)
+        #fit = Polynomial.fit(self.dfs, self.ufis, 1)
+        #nominalDelay = fit.convert().coef[1]
+        #if doPlot:
+        #        #plt.plot(dfs,fis, ".-")
+        #        fig,ax = plt.subplots(2,1,sharex=True)
+        #        ax[0].plot(self.dfs, self.ufis, ".",label="data")
+        #        ax[0].plot(self.dfs, fit(self.dfs), label="fit")
+        #        ax[0].set_ylabel("unwrapped phase [Radians]")
+        #        ax[0].legend()
+        #        ax[1].plot(self.dfs, self.ufis-fit(self.dfs),'.')
+        #        ax[1].set_ylabel("fit residual [Radians]")
+        #        ax[1].set_xlabel("f offset in out channel")
+        #        plt.suptitle("outCh=%d DDSDelay = %f $\mu$sec"%(outCh,nominalDelay))
         return nominalDelay
 
-def applyCalibration(fscan, calibration, amplitudeMax=30000):
-    """
-    Apply the calibration to the frequency scan
-    
-    Parameters:
-    -----------
-        fscan : object
-            returned from the function fscan.
-        calibration : object
-            returned from the function makeCalibration
-        amplitudeMax : float
-            amplitude of measurement when amplitudes of fscan and calibration are equal
-            
-    Returns:
-    --------
-        a deep copy of fscan with the calibration applied.
-    """
-    fscanCalib = copy.deepcopy(fscan)
-    nominalDelay = calibration['nominalDelay']
-    applyDelay(fscanCalib, nominalDelay)
-    if nominalDelay != fscanCalib['delayApplied']:
-        raise ValueError("fscan already had a delay applied", nominalDelay, fscanCalib['delayApplied'])
-    dfs = fscanCalib['dfs']
-    for iTone,(freq,xs) in enumerate(zip(fscanCalib['freqs'],fscanCalib['xs'])):
-        freqs = freq+dfs
-        xCalib = np.zeros(len(freqs), dtype=complex)
-        for i, freq in enumerate(freqs):
-            iCalib = np.searchsorted(calibration['fList'], freq)-1 
-            xCalib[i] = calibration['cInterps'][iCalib](freq)
-        gain = amplitudeMax/np.abs(xCalib)
-        fscanCalib['xs'][:,iTone] *= gain
-        dfi = np.angle(xCalib)
-        xs = fscanCalib['xs'][:,iTone]
-        fscanCalib['xs'][:,iTone] = np.abs(xs)*np.exp(1j*(np.angle(xs)-dfi))
-    return fscanCalib                                                     
+    #apply delay and apply calibration need to be methods of Scan so we can use aliased frequencies beyond the first Nyquist zone
+
+    def applyDelay(self, fscan, delay):
+        """
+        apply the delay to the phases
+
+        Parameters:
+        -----------
+            fscan : object
+                returned from the function fscan.
+            delay : float
+                time delay between DDS blocks, in microseconds, usually calculate by the function measureNominalDelay
+
+        Return:
+        -------
+            None, as the fscan object is updated in place
+        """
+        try:
+            fscan['delayApplied'] += delay
+        except KeyError:
+            fscan['delayApplied'] =  delay
+        for iTone in range(fscan['xs'].shape[1]):
+            xs = fscan['xs'][:,iTone]
+            freqs = fscan['dfs'] + fscan['freqs'][iTone]
+            aliasedFreqs = self.soc.fAliasedFromFTone(freqs)
+            fscan['xs'][:,iTone] = np.abs(xs)*np.exp( 1j*(np.angle(xs) - delay*aliasedFreqs) )
+
+    def applyCalibration(self, fscan, calibration, amplitudeMax=30000):
+        """
+        Apply the calibration to the frequency scan
+
+        Parameters:
+        -----------
+            fscan : object
+                returned from the function fscan.
+            calibration : object
+                returned from the function makeCalibration
+            amplitudeMax : float
+                amplitude of measurement when amplitudes of fscan and calibration are equal
+
+        Returns:
+        --------
+            a deep copy of fscan with the calibration applied.
+        """
+        fscanCalib = copy.deepcopy(fscan)
+        nominalDelay = calibration['nominalDelay']
+        self.applyDelay(fscanCalib, nominalDelay)
+        if nominalDelay != fscanCalib['delayApplied']:
+            raise ValueError("fscan already had a delay applied", nominalDelay, fscanCalib['delayApplied'])
+        dfs = fscanCalib['dfs']
+        for iTone,(freq,xs) in enumerate(zip(fscanCalib['freqs'],fscanCalib['xs'])):
+            freqs = freq+dfs
+            xCalib = np.zeros(len(freqs), dtype=complex)
+            for i, freq in enumerate(freqs):
+                iCalib = np.searchsorted(calibration['fList'], freq)-1 
+                xCalib[i] = calibration['cInterps'][iCalib](freq)
+            gain = (0.9/len(freqs))*amplitudeMax/np.abs(xCalib)
+            fscanCalib['xs'][:,iTone] *= gain
+            dfi = np.angle(xCalib)
+            xs = fscanCalib['xs'][:,iTone]
+            fscanCalib['xs'][:,iTone] = np.abs(xs)*np.exp(1j*(np.angle(xs)-dfi))
+        return fscanCalib                                                     
 
 
-def fscanPlot(fscan, iTone):
+def fscanPlot(fscan, iTone, millirad=False, db=False):
     """
     plot the amplitude and phase near one tone of the scan
     
@@ -518,10 +589,20 @@ def fscanPlot(fscan, iTone):
     dfs = fscan["dfs"]
     xs = fscan['xs'][:,iTone]
     fig,ax = plt.subplots(2,1,sharex=True)
-    ax[0].plot(dfs, np.abs(xs), '-o')
-    ax[0].set_ylabel("amplitude [ADUs]")
-    ax[1].plot(dfs, np.angle(xs), '-o')
-    ax[1].set_ylabel("phase [Radians]")
+    if db:
+        ax[0].plot(dfs, 20*np.log10(np.abs(xs)), '-o')
+        ax[0].set_ylabel("amplitude [db]")
+    else:
+        ax[0].plot(dfs, np.abs(xs), '-o')
+        ax[0].set_ylabel("amplitude [ADUs]")
+        
+    if millirad:
+        ax[1].plot(dfs, 1000*np.angle(xs), '-o')
+        ax[1].set_ylabel("phase [millirad]")
+    else:
+        ax[1].plot(dfs, np.angle(xs), '-o')
+        ax[1].set_ylabel("phase [Radians]")
+        
     ax[1].set_xlabel("Frequency-%f [MHz]"%fscan["freqs"][iTone])
     
 def fscanToSpectrum(fscan):
@@ -551,30 +632,6 @@ def fscanToSpectrum(fscan):
     inds = np.argsort(allfreqs)
     return allfreqs[inds], allamps[inds], allfis[inds]
    
-def applyDelay(fscan, delay):
-    """
-    apply the delay to the phases
-    
-    Parameters:
-    -----------
-        fscan : object
-            returned from the function fscan.
-        delay : float
-            time delay between DDS blocks, in microseconds, usually calculate by the function measureNominalDelay
-            
-    Return:
-    -------
-        None, as the fscan object is updated in place
-    """
-    try:
-        fscan['delayApplied'] += delay
-    except KeyError:
-        fscan['delayApplied'] =  delay
-    for iTone in range(fscan['xs'].shape[1]):
-        xs = fscan['xs'][:,iTone]
-        freqs = fscan['dfs'] + fscan['freqs'][iTone]
-        
-        fscan['xs'][:,iTone] = np.abs(xs)*np.exp( 1j*(np.angle(xs) - delay*freqs) )
         
 def _unwrapPhis(phis, sign=1):
     """
@@ -585,3 +642,59 @@ def _unwrapPhis(phis, sign=1):
         if uphis[i-1] > uphis[i] + np.pi:
             uphis[i:] += 2*np.pi
     return sign*uphis
+
+def _minimizeDelayFun(pars, dfs, xs):
+    phiFits = pars[0] + pars[1]*dfs
+    phiData = np.angle(xs)
+    dPhis = np.angle(np.exp(1j*(phiFits-phiData)))
+    retval = np.power(dPhis,2).mean()
+    return retval
+
+def plotCalibrationAndScan(fStart, fEnd, calibration, scan=None, fList=None, doIQ=False):
+    if fList is None:
+        fList = calibration['fList']
+    cSpectrum = fscanToSpectrum(calibration['fscan'])
+    cInds = (cSpectrum[0] > fStart ) & (cSpectrum[0] < fEnd)
+    cAmp = cSpectrum[1]
+    cPha = cSpectrum[2]
+
+    if scan is not None:
+        sSpectrum = fscanToSpectrum(scan)
+        sInds = (sSpectrum[0] > fStart ) & (sSpectrum[0] < fEnd)
+        sAmp = sSpectrum[1]
+        sPha = sSpectrum[2]
+
+    
+    fig,ax = plt.subplots(2,1,sharex=True)
+    
+    if doIQ:
+        cxs = cAmp[cInds]*np.exp(1j*cPha[cInds])
+        ctuple = (np.real(cxs), np.imag(cxs))
+        if scan is not None:
+            sxs = sAmp[sInds]*np.exp(1j*sPha[sInds])
+            stuple = (np.real(sxs), np.imag(sxs))
+        ylabels = ("I [ADUs]","Q [ADUs]")
+    else:
+        ctuple = (cAmp[cInds],cPha[cInds])
+        if scan is not None:
+            stuple = (sAmp[sInds],sPha[sInds])
+        ylabels = ("Amplitude [ADUs]","Phase [Radians]")
+        
+    ax[0].plot(cSpectrum[0][cInds],ctuple[0], ',', label="calibration")
+    ax[1].plot(cSpectrum[0][cInds],ctuple[1], ',', label="calibration")
+    if scan is not None:
+        ax[0].plot(sSpectrum[0][sInds],stuple[0], ',', label="scan")
+        ax[1].plot(sSpectrum[0][sInds],stuple[1], ',', label="scan")
+    if fList is not None:
+        for f in fList:
+            ax[0].axvline(f,color='r', alpha=0.2)
+            ax[1].axvline(f,color='r', alpha=0.2)
+    ax[1].set_xlabel("frequency (MHz)")
+    ax[0].set_ylabel(ylabels[0])
+    ax[1].set_ylabel(ylabels[1])
+    ax[0].legend()
+    ax[1].legend()
+    
+    #freqs,amps,fis = Scan.fscanToSpectrum(fscan)
+    
+    plt.xlim((fStart,fEnd))
