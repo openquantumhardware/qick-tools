@@ -57,6 +57,10 @@ class Scan():
         self.soc.dds_out.alloff()
         self.toneFreqsRequested = freqsRequested
         freqs = self.soc.DF*np.round(freqsRequested/self.soc.DF)
+        # Check that these are in the same Nyquist zone as the mixer frequency
+        nZoneTones = self.soc.nZoneFromFTone(freqs)
+        if nZoneTones.mean() != self.soc.nZone:
+            raise ValueError("Tones need to be in same Nyquist zone as the mixer frequency, but:  soc.nZone=%d and nZoneTones=%s"%(soc.nZone,nZoneTones))
         pfb_chs, dds_freqs, _, unwrapped_chs = self.soc.pfb_out.freq2ch(freqs, self.soc.pfb_out.get_fmix())
         if verbose:
             for i in range(len(freqs)):
@@ -125,10 +129,13 @@ class Scan():
 
     
     def readAndUnpack(self,  nt=1, nsamp=10000,
-                      average=False, subtractInputPhase=True, iBegin=0,
+                      average=False, subtractInputPhase=True,
+                      iBegin=0,
                       debugTransfer=False, unpackVerbose=False):
         self.packets = self.soc.stream.transfer(nt=nt, nsamp=nsamp, debug=debugTransfer)
-        return self.unpack(unpackVerbose, average, subtractInputPhase=subtractInputPhase, iBegin=iBegin)
+        return self.unpack(unpackVerbose, average,
+                           subtractInputPhase=subtractInputPhase,
+                           iBegin=iBegin)
         """
         read and unpack data for the tones
             Parameters
@@ -193,7 +200,7 @@ class Scan():
         for it in range(nt):
             xsByTone = []
             for iTone,(ntran,stream) in enumerate(zip(self.ntranByTone,self.streamByTone)):
-                temp = xs[it, ntrans[it]==ntran, stream]
+                temp = copy.deepcopy(xs[it, ntrans[it]==ntran, stream])
                 if verbose: print("   nt, iTone , x.shape", it, iTone, temp.shape)
 
                 if subtractInputPhase:
@@ -213,9 +220,15 @@ class Scan():
 
     def _subtractInputPhase(self, x, toneFi):
         """
-        Return values with phase of x reducted by toneFi in radians
+        Return values with phase of x 
+        corrected by the generated phase toneFi (in Radians)
         """
-        xrot = np.abs(x)*np.exp(1j * (np.angle(x)-toneFi))
+        nZone = self.soc.nZone
+        nzSign = 1-2*np.mod(nZone,2)
+        # nzSign is:
+        #    -1 in odd-numbered Nyquist zones 
+        #    +1 in even-number Nyquist zones
+        xrot = np.abs(x)*np.exp(1j * (np.angle(x) + nzSign*toneFi))
         return xrot
 
     def fscan(self, freqs, amps, fis, 
@@ -253,7 +266,7 @@ class Scan():
                 True to iterate using tdqm to show a nifty progress bar in jupyter notebook
             retainPackets : boolean
                 True to save copies of all packets during a scan, used in development and debugging; default=False
-            subtracInputPhase : boolean
+            subtractInputPhase : boolean
                 True to subtract phase of the generated tone; default=True
         Returns:
         -------
@@ -289,8 +302,8 @@ class Scan():
             self.setTones(df+freqs, amps, fis)
             self.prepRead(decimation)
             x = self.readAndUnpack(nt, nsamp, average=True,
-                                   subtractInputPhase=subtractInputPhase,
-                                   iBegin=iBegin)
+                            subtractInputPhase=subtractInputPhase,
+                            iBegin=iBegin)
             if retainPackets:
                 self.retainedPackets.append(self.packets)
             xs[i] =  x  
@@ -324,11 +337,11 @@ class Scan():
         fList = []
         # Add boundaries of input channels to fList
         freq = self.soc.inCh2FreqCenter(self.soc.inFreq2ch(fMin)) -  self.soc.fcIn/2
-        nZoneMin = self.soc.nZoneFromFToneScalar(fMin)
+        nZoneMin = self.soc.nZoneFromFTone(fMin)
         freq += (nZoneMin-1)*self.soc.fsIn/2
         
         fEnd = self.soc.inCh2FreqCenter(self.soc.inFreq2ch(fMax)) +  self.soc.fcIn/2
-        nZoneMax = self.soc.nZoneFromFToneScalar(fMax)
+        nZoneMax = self.soc.nZoneFromFTone(fMax)
         fEnd += (nZoneMax-1)*self.soc.fsIn/2
         
         #freq = max(0, fMin - self.soc.fcIn)
@@ -400,10 +413,11 @@ class Scan():
         if verbose: print("Scan.makeCalibration:  len(freqs) =",len(freqs))
         amps = np.ones(len(freqs))*0.9/len(freqs)
         np.random.seed(randSeed)
-        fis = np.random.uniform(0, 2*np.pi, len(freqs))
+        print("makeCalibration:  all fis zero")
+        fis = 0.0*np.random.uniform(0, 2*np.pi, len(freqs))
         if verbose:
             for iTone, freq in enumerate(freqs):
-                print("iTone=%d freq=%7.2f amp=%4.2f fi=%5.3f"%(iTone,freqs[iTone], amps[iTone], fis[iTone]))
+                print("Scan makeCalibration: iTone=%d freq=%7.2f amp=%4.2f fi=%5.3f"%(iTone,freqs[iTone], amps[iTone], fis[iTone]))
         bandwidth = self.soc.fcOut * (1-1/nf) 
         fscan = self.fscan(freqs, amps, fis, 
                            bandwidth, nf, decimation, 
@@ -411,6 +425,8 @@ class Scan():
                            pfbOutQout, verbose=verbose, 
                            doProgress=doProgress)
         if nominalDelay is not None:
+            if verbose:
+                print("Scan makeCalibration: applyDelay with nominalDelay =",nominalDelay)
             self.applyDelay(fscan, nominalDelay)
         fList = self.makeFList(fMixer, fMin, fMax)
         sFreqs, fAmps, sFis = fscanToSpectrum(fscan)
@@ -470,7 +486,7 @@ class Scan():
         fTone = freqs[0]
         freqs = fTone + self.mndScan['dfs']
         aliasedFreqs = self.soc.fAliasedFromFTone(freqs)
-        aliasedFTone = self.soc.fAliasedFromFToneScalar(fTone)
+        aliasedFTone = self.soc.fAliasedFromFTone(fTone)
         self.dfsAliased = aliasedFreqs - aliasedFTone
         self.xs = self.mndScan['xs'][:,0]
         phi0 = np.angle(self.xs[len(self.xs)//2])
@@ -528,6 +544,7 @@ class Scan():
         -------
             None, as the fscan object is updated in place
         """
+        print(" Scan applyDelay:  apply delay =",delay)
         try:
             fscan['delayApplied'] += delay
         except KeyError:
@@ -539,6 +556,11 @@ class Scan():
             fscan['xs'][:,iTone] = np.abs(xs)*np.exp( 1j*(np.angle(xs) - delay*aliasedFreqs) )
             #fscan['xs'][:,iTone] = np.abs(xs)*np.exp( 1j*(np.angle(xs) - delay*freqs) )
 
+    def applyDelayToX(self, xs, freqs, delay):
+        aliasedFreqs = self.soc.fAliasedFromFTone(freqs)
+        xsd = np.abs(xs)*np.exp(1j*(np.angle(xs) - delay*aliasedFreqs))
+        return xsd
+    
     def applyCalibration(self, fscan, calibration, amplitudeMax=30000):
         """
         Apply the calibration to the frequency scan

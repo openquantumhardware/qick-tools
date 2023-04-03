@@ -892,7 +892,7 @@ class TopSoc(QickSoc):
         # Mixer.
         self.mixer = self.usp_rf_data_converter_0
         self.mixer.configure(self)
-
+        
         # RF data converter (for configuring ADCs and DACs)
         self.rf = self.usp_rf_data_converter_0
         
@@ -944,12 +944,16 @@ class TopSoc(QickSoc):
         self.fbOut = self.pfb_out.get_fb()
         self.fcOut = self.pfb_out.get_fc()
 
+        # Set the mixer to the middle of the first Nyquist zone
+        self.set_mixer(self.fsIn/4)
 
 
     def set_mixer(self, fmix): # fmix in MHz
-        """Set mixer frequency in MHz"""
+        """Set mixer frequency in MHz and save the nyquist zone"""
         self.pfb_out.set_fmix(fmix)
-        return self.pfb_out.get_fmix()
+        fmixSet = self.get_mixer()
+        self.nZone = self.nZoneFromFTone(fmixSet)
+        return fmixSet
     
     def get_mixer(self):
         """Get mixer frequency in MHz"""
@@ -959,23 +963,23 @@ class TopSoc(QickSoc):
         """ Print information about the system to stream, default sys.stdout"""
         print("Board model: %s"%self.board, file=stream)
         print("Input:", file=stream)
-        print("         number of input channels: %7d"%self.nInCh)
-        print("         input sampling frequency: %7.2f MHz"%self.fsIn)
-        print("             input DDS resolution: %7.4f Hz"%(1e6*self.ddscic.DF_DDS))
-        print("  bandwidth of each input channel: %7.2f MHz"%self.fbIn)
-        print("   spacing between input channels: %7.2f MHz"%self.fcIn)
-        print("            total input bandwidth: %7.2f MHz"%(self.nInCh*self.fcIn))
+        print("         number of input channels:                        nInCh = %7d"%self.nInCh)
+        print("         input sampling frequency:                         fsIn = %7.2f MHz"%self.fsIn)
+        print("             input DDS resolution:                ddscic.DF_DDS = %7.4f Hz"%(1e6*self.ddscic.DF_DDS))
+        print("  bandwidth of each input channel:                         fbIn = %7.2f MHz"%self.fbIn)
+        print("   spacing between input channels:                         fcIn = %7.2f MHz"%self.fcIn)
+        print("            total input bandwidth:                   nInCh*fcIn = %7.2f MHz"%(self.nInCh*self.fcIn))
         print("Output:", file=stream)
-        print("        number of output channels: %7d"%self.nOutCh)
-        print("        output sampling frequency: %7.2f MHz"%self.fsOut)
-        print("            output DDS resolution: %7.4f Hz"%(1e6*self.dds_out.DF_DDS))
-        print(" bandwidth of each output channel: %7.2f MHz"%self.fbOut)
-        print("  spacing between output channels: %7.2f MHz"%self.fcOut)
-        print("           total output bandwidth: %7.2f MHz"%(self.nOutCh*self.fcOut))
+        print("        number of output channels:                       nOutCh = %7d"%self.nOutCh)
+        print("        output sampling frequency:                        fsOut = %7.2f MHz"%self.fsOut)
+        print("            output DDS resolution:               dds_out.DF_DDS = %7.4f Hz"%(1e6*self.dds_out.DF_DDS))
+        print(" bandwidth of each output channel:                        fbOut = %7.2f MHz"%self.fbOut)
+        print("  spacing between output channels:                        fcOut = %7.2f MHz"%self.fcOut)
+        print("           total output bandwidth:                 nOutCh*fcOut = %7.2f MHz"%(self.nOutCh*self.fcOut))
 
         print("")
-        print("             frequency resolution: %7.4f Hz"%(1e6*self.DF))
-        print("      output/input DDS resolution: %f"%(self.dds_out.DF_DDS/self.ddscic.DF_DDS))
+        print("             frequency resolution:                       1e6*DF = %7.4f Hz"%(1e6*self.DF))
+        print("      output/input DDS resolution: dds_out.DF_DDS/ddscic.DF_DDS = %f"%(self.dds_out.DF_DDS/self.ddscic.DF_DDS))
 
     def inFreq2ch(self, frequency):
         """
@@ -1042,31 +1046,26 @@ class TopSoc(QickSoc):
                 fCenter[i] = self.pfb_in.ch2freq(ch[i])                        
         return fCenter
     
-    def nZoneFromFToneScalar(self, fTone):
+    def nZoneFromFTone(self, fTone):
+        """ Return the Nyquist zone for the frequency fTone"""
         fn = self.fsIn/2
-        nZone = int(fTone/fn) + 1
+        div,mod = np.divmod(fTone,fn)
+        nZone = div.astype(int) + 1
         return nZone
     
-    def fAliasedFromFToneScalar(self, fTone):
-        fn = self.fsIn/2
-        nZone = int(fTone/fn) + 1
-        if np.mod(nZone,2):
-            #print(" ODD nZone =",nZone)
-            fAliased = fTone - (nZone-1)*fn
-        else:
-            #print("EVEN nZone =",nZone)
-            fAliased = nZone*fn - fTone
-        return fAliased
-
     def fAliasedFromFTone(self, fTone):
+        """ Return the aliased frequency for the frequency fTone"""
         fn = self.fsIn/2
-
-        nZone = ((fTone/fn) + 1).astype(int)
-
+        nZone = self.nZoneFromFTone(fTone)
         fAliased = nZone*fn - fTone # This is for the even-numbered Nyquist zones
         oddInds = np.mod(nZone,2) == 1
-        fAliased[oddInds] =  fTone[oddInds] - (nZone[oddInds]-1)*fn
+        try:
+            fAliased[oddInds] =  fTone[oddInds] - (nZone[oddInds]-1)*fn
+        except TypeError:
+            if oddInds:
+                fAliased -= (nZone-1)*fn
         return fAliased
+
 
     def inFreq2NtranStream(self,freqs):
         """
