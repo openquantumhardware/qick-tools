@@ -295,6 +295,8 @@ class AxisPfb4x1024V1(SocIp):
     # Flags.
     HAS_ADC         = False
     HAS_DDSCIC      = False
+    HAS_DDS_DUAL    = False
+    HAS_CIC         = False
     HAS_CHSEL       = False
     HAS_STREAMER    = False
     HAS_DMA         = False
@@ -400,6 +402,22 @@ class AxisPfb4x1024V1(SocIp):
                 # Add ddscic into dictionary.
                 self.dict['ddscic'] = block
 
+                ((block, port),) = soc.metadata.trace_bus(block, 'm_axis')
+                if verbose:
+                    print('{}: {}.{}'.format(self.fullpath, block, port))
+            elif blocktype == "axis_dds_dual_v1":
+                self.HAS_DDS_DUAL = True
+
+                # Add ddscic into dictionary.
+                self.dict['dds'] = block
+                ((block, port),) = soc.metadata.trace_bus(block, 'm1_axis')
+                if verbose:
+                    print('{}: {}.{}'.format(self.fullpath, block, port))
+            elif blocktype == "axis_cic_v1":
+                self.HAS_CIC = True
+
+                # Add ddscic into dictionary.
+                self.dict['cic'] = block
                 ((block, port),) = soc.metadata.trace_bus(block, 'm_axis')
                 if verbose:
                     print('{}: {}.{}'.format(self.fullpath, block, port))
@@ -633,6 +651,63 @@ class AxisDdsCicV2(SocIp):
                 self.addr_we_reg = 1
                 self.addr_we_reg = 0                
         
+class AxisCicV1(SocIp):
+    bindto = ['user.org:user:axis_cic_v1:1.0']
+    REGISTERS = {'cic_rst_reg'    : 0,
+                 'cic_d_reg'      : 1, 
+                 'qdata_qsel_reg' : 2}
+    
+    # Decimation range.
+    MIN_D = 1
+    MAX_D = 250
+    
+    # Quantization range.
+    MIN_Q = 0
+    MAX_Q = 24
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Default registers.
+        self.cic_rst_reg    = 1 # Keep resetting accumulator.
+        self.cic_d_reg      = 4 # Decimate-by-4.
+        self.qdata_qsel_reg = 0 # Upper bits for truncation.
+        
+        # Generics.
+        self.L = int(description['parameters']['L'])
+        self.NCH = int(description['parameters']['NCH'])
+        self.NCH_TOTAL = self.L * self.NCH
+
+        # Start.
+        self.start()
+
+    def start(self):
+        self.cic_rst_reg  = 0
+        
+    def decimate(self, decimate=4):
+        # Sanity check.
+        if (decimate >= self.MIN_D and decimate <= self.MAX_D):
+            self.cic_d_reg = decimate
+            
+    def qsel(self, value=0):
+        # Sanity check.
+        if (value >= self.MIN_Q and value <= self.MAX_Q):
+            self.qdata_qsel_reg = value
+            
+    def get_decimate(self):
+        return self.cic_d_reg
+    
+    def decimation(self, value):
+        # Sanity check.
+        if (value >= self.MIN_D and value <= self.MAX_D):
+            # Compute CIC output quantization.
+            qsel = self.MAX_Q - np.ceil(3*np.log2(value))
+            
+            # Set values.
+            self.decimate(value)
+            self.qsel(qsel)    
+    
 class AxisChSelPfbV2(SocIp):
     bindto = ['user.org:user:axis_chsel_pfb_v2:1.0']
     REGISTERS = {   'start_reg' : 0, 
@@ -1112,6 +1187,132 @@ class AxisDdsV3(SocIp):
         for ch in np.arange(self.NCH_TOTAL):
             self.ddscfg(g=0, ch=ch)            
 
+class AxisDdsDualV1(SocIp):
+    bindto = ['user.org:user:axis_dds_dual_v1:1.0']
+    REGISTERS = {'addr_nchan_reg'       : 0, 
+                 'addr_pinc_reg'        : 1, 
+                 'addr_phase_reg'       : 2,
+                 'addr_dds_gain_reg'    : 3,
+                 'addr_comp_gain_reg'   : 4,
+                 'addr_cfg_reg'         : 5,
+                 'addr_we_reg'          : 6,                  
+                 'dds_sync_reg'         : 7}
+    
+    # Sampling frequency and frequency resolution (Hz).
+    FS_DDS      = 1000
+    DF_DDS      = 1
+    DFI_DDS     = 1
+    
+    # DDS bits.
+    B_DDS       = 32
+
+    # Gain.
+    B_GAIN      = 16
+    MIN_GAIN    = -1
+    MAX_GAIN    = 1
+
+    # Phase.
+    MIN_PHI     = 0
+    MAX_PHI     = 360
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Default registers.
+        self.addr_nchan_reg     = 0;
+        self.addr_pinc_reg      = 0;
+        self.addr_phase_reg     = 0;
+        self.addr_dds_gain_reg  = 0;
+        self.addr_comp_gain_reg = 0;
+        self.addr_cfg_reg       = 0; # Down-coverted and compensated output.
+        self.addr_we_reg        = 0;
+        self.dds_sync_reg       = 1; # Sync DDS.
+
+        # Default sel.
+        self.sel_default = "product"
+
+        # Generics
+        self.L      = int(description['parameters']['L'])
+        self.NCH    = int(description['parameters']['NCH'])
+        self.NCH_TOTAL = self.L * self.NCH
+
+        # Initialize DDSs.
+        for i in range(self.NCH_TOTAL):
+            self.ddscfg(ch = i)
+
+        # Start DDS.
+        self.start()
+        
+    def configure(self, fs):
+        fs_hz = fs*1000*1000
+        self.FS_DDS     = fs_hz
+        self.DF_DDS     = self.FS_DDS/2**self.B_DDS
+        self.DFI_DDS    = self.MAX_PHI/2**self.B_DDS
+
+    def start(self):
+        self.dds_sync_reg   = 0
+
+    def dds_outsel(self, sel="product"):
+        # Set default outsel (for compatibility with DDS+CIC).
+        self.sel_default = sel
+
+    def ddscfg(self, f=0, fi=0, g=0, cg_i=0, cg_q=0, ch=0, comp=False):
+        # Sanity check.
+        if (ch >= 0 and ch < self.NCH_TOTAL):
+            if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
+                if (fi >= self.MIN_PHI and fi < self.MAX_PHI): 
+                    if (g >= self.MIN_GAIN and g < self.MAX_GAIN):
+                        if (cg_i >= self.MIN_GAIN and cg_i < self.MAX_GAIN):
+                            if (cg_q >= self.MIN_GAIN and cg_q < self.MAX_GAIN):
+                                # Compute pinc value.
+                                ki = int(round(f/self.DF_DDS))
+
+                                # Compute phase value.
+                                fik = int(round(fi/self.DFI_DDS))
+
+                                # Compute gain.
+                                gi  = g*(2**(self.B_GAIN-1))
+
+                                # Output selection.
+                                if self.sel_default == "product":
+                                    cfg = 0
+                                elif self.sel_default == "dds":
+                                    cfg = 1
+                                elif self.sel_default == "input":
+                                    cfg = 2
+                                else:
+                                    cfg = 3 # 0 value.
+
+                                # Compensation.
+                                if not comp:
+                                    cfg += 4
+
+                                self.addr_cfg_reg = 0
+
+
+                                # Write values to hardware.
+                                self.addr_nchan_reg     = ch
+                                self.addr_pinc_reg      = ki
+                                self.addr_phase_reg     = fik
+                                self.addr_dds_gain_reg  = gi
+                                # TODO: compensation gain.
+                                self.addr_cfg_reg       = cfg
+                                self.addr_we_reg    = 1
+                                self.addr_we_reg    = 0
+                    else:
+                        raise ValueError('gain=%f not contained in [%f,%f)'%(g,self.MIN_GAIN,self.MAX_GAIN))
+                else:
+                    raise ValueError('phase=%f not contained in [%f,%f)'%(fi,self.MIN_PHI,self.MAX_PHI))
+            else:
+                raise ValueError('frequency=%f not contained in [%f,%f)'%(f,0,self.FS_DDS))
+        else:
+            raise ValueError('ch=%d not contained in [%d,%d)'%(ch,0,self.NCH_TOTAL))
+            
+    def alloff(self):
+        for ch in np.arange(self.NCH_TOTAL):
+            self.ddscfg(ch=ch) # WIll zero-out output and down-convert with 0 freq.
+
 class AxisPfbSynth4x512V1(SocIp):
     bindto = ['user.org:user:axis_pfbsynth_4x512_v1:1.0']
     REGISTERS = {'qout_reg':0}
@@ -1124,8 +1325,9 @@ class AxisPfbSynth4x512V1(SocIp):
     STREAM_OUT_PORT = 'm_axis'
 
     # Flags.
-    HAS_DAC = False
-    HAS_DDS = False
+    HAS_DAC         = False
+    HAS_DDS         = False
+    HAS_DDS_DUAL    = False
     
     def __init__(self, description):
         # Initialize ip
@@ -1324,6 +1526,226 @@ class AxisPfbSynth4x512V1(SocIp):
     def qout(self, value):
         self.qout_reg = value
 
+class AxisPfbSynth4x1024V1(SocIp):
+    bindto = ['user.org:user:axis_pfbsynth_4x1024_v1:1.0']
+    REGISTERS = {'qout_reg':0}
+    
+    # Number of channels.
+    N = 1024
+
+    # Trace parameters.
+    STREAM_IN_PORT = 's_axis'
+    STREAM_OUT_PORT = 'm_axis'
+
+    # Flags.
+    HAS_DAC         = False
+    HAS_DDS         = False
+    HAS_DDS_DUAL    = False
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Default registers.
+        self.qout_reg   = 0
+
+        # Dictionary.
+        self.dict = {}
+        self.dict['NCH'] = self.N
+
+    def configure_connections(self, soc, verbose=False):
+        self.soc = soc
+
+        ##################################################
+        ### Backward tracing: should finish at the DDS ###
+        ##################################################
+        if verbose:
+            print(' ')
+            print('{} backward tracing start'.format(self.fullpath))
+
+        ((block,port),) = soc.metadata.trace_bus(self.fullpath, self.STREAM_IN_PORT)
+        if verbose:
+            print('{}: Port {} driven by {}.{}'.format(self.fullpath, self.STREAM_IN_PORT, block, port))
+
+        while True:
+            blocktype = soc.metadata.mod2type(block)
+
+            if blocktype == "axis_dds_v3":
+                self.HAS_DDS = True
+
+                # Add dds to dictionary.
+                self.dict['dds'] = block
+                if verbose:
+                    print('{}: done backward tracing.'.format(self.fullpath))
+                break
+            if blocktype == "axis_dds_dual_v1":
+                self.HAS_DDS_DUAL = True
+
+                # Add dds to dictionary.
+                self.dict['dds'] = block
+                if verbose:
+                    print('{}: done backward tracing.'.format(self.fullpath))
+                break
+            elif blocktype == "axis_register_slice":
+                ((block, port),) = soc.metadata.trace_bus(block, 'S_AXIS')
+                if verbose:
+                    print('{}: {}.{}'.format(self.fullpath, block, port))
+            else:
+                raise RuntimeError("falied to trace port for %s - unrecognized IP block %s" % (self.fullpath, block))
+
+        #############################################
+        ### Forward tracing: should finish on DAC ###
+        #############################################
+        if verbose:
+            print(' ')
+            print('{} forward tracing start'.format(self.fullpath))
+
+        ((block,port),) = soc.metadata.trace_bus(self.fullpath, self.STREAM_OUT_PORT)
+        if verbose:
+            print('{}: Port {} drives {}.{}'.format(self.fullpath, self.STREAM_OUT_PORT, block, port))
+
+        while True:
+            blocktype = soc.metadata.mod2type(block)
+
+            if blocktype == "usp_rf_data_converter":
+                self.HAS_DAC = True
+
+                # Get DAC and tile.
+                tile, dac_ch = self.port2dac(port)
+
+                # Add dac data into dictionary.
+                id_ = str(tile) + str(dac_ch)
+                self.dict['dac'] = {'tile' : tile, 'ch' : dac_ch, 'id' : id_}
+                if verbose:
+                    print('{}: done forward tracing.'.format(self.fullpath))
+                break
+            elif blocktype == "axis_register_slice":
+                ((block, port),) = soc.metadata.trace_bus(block, 'M_AXIS')
+                if verbose:
+                    print('{}: {}.{}'.format(self.fullpath, block, port))
+            else:
+                raise RuntimeError("falied to trace port for %s - unrecognized IP block %s" % (self.fullpath, block))
+
+    def port2dac(self, port):
+        # This function cheks the port correspond to a DAC.
+        # The correspondance is:
+        #
+        # DAC0, tile 0.
+        # s00_axis
+        #
+        # DAC1, tile 0.
+        # s01_axis
+        #
+        # DAC2, tile 0.
+        # s02_axis
+        #
+        # DAC3, tile 0.
+        # s03_axis
+        #
+        # DAC0, tile 1.
+        # s10_axis
+        #
+        # DAC1, tile 1.
+        # s11_axis
+        #
+        # DAC2, tile 1.
+        # s12_axis
+        #
+        # DAC3, tile 1.
+        # s13_axis
+        #
+        # DAC0, tile 2.
+        # s20_axis
+        #
+        # DAC1, tile 2.
+        # s21_axis
+        #
+        # DAC2, tile 2.
+        # s22_axis
+        #
+        # DAC3, tile 2.
+        # s23_axis
+        #
+        # DAC0, tile 3.
+        # s30_axis
+        #
+        # DAC1, tile 3.
+        # s31_axis
+        #
+        # DAC2, tile 3.
+        # s32_axis
+        #
+        # DAC3, tile 3.
+        # s33_axis
+        #
+        # First value, tile.
+        # Second value, dac.
+        dac_dict =  {
+            '0' :   {
+                        '0' : {'port' : 's00'}, 
+                        '1' : {'port' : 's01'}, 
+                        '2' : {'port' : 's02'}, 
+                        '3' : {'port' : 's03'}, 
+                    },
+            '1' :   {
+                        '0' : {'port' : 's10'}, 
+                        '1' : {'port' : 's11'}, 
+                        '2' : {'port' : 's12'}, 
+                        '3' : {'port' : 's13'}, 
+                    },
+            '2' :   {
+                        '0' : {'port' : 's20'}, 
+                        '1' : {'port' : 's21'}, 
+                        '2' : {'port' : 's22'}, 
+                        '3' : {'port' : 's23'}, 
+                    },
+            '3' :   {
+                        '0' : {'port' : 's30'}, 
+                        '1' : {'port' : 's31'}, 
+                        '2' : {'port' : 's32'}, 
+                        '3' : {'port' : 's33'}, 
+                    },
+                    }
+        p_n = port[0:3]
+
+        # Find adc<->port.
+        for tile in dac_dict.keys():
+            for dac in dac_dict[tile].keys():
+                if p_n == dac_dict[tile][dac]['port']:
+                    return tile,dac
+
+        # If I got here, dac not found.
+        raise RuntimeError("Cannot find correspondance with any DAC for port %s" % (port))
+
+    def configure(self, fs):
+        # Channel centers.
+        fc = fs/self.N
+
+        # Channel bandwidth.
+        fb = fs/(self.N/2)
+
+        # Add data into dictionary.
+        self.dict['freq'] = {'fs' : fs, 'fc' : fc, 'fb' : fb}
+
+    def freq2ch(self,f):
+        # Check if frequency is on -fs/2 .. fs/2.
+        if ( -self.dict['freq']['fs']/2 < f < self.dict['freq']['fs']/2):
+            k = np.round(f/self.dict['freq']['fc'])
+
+            if k >= 0:
+                return int(k)
+            else:
+                return int (self.N + k)
+
+    def ch2freq(self,ch):
+        if ch >= self.N/2:
+            ch_ = self.N - ch
+            return -(ch_*self.dict['freq']['fc'])
+        else:
+            return ch*self.dict['freq']['fc']
+
+    def qout(self, value):
+        self.qout_reg = value
 class RFDC(xrfdc.RFdc):
     """
     Extends the xrfdc driver.
@@ -1511,7 +1933,7 @@ class AnalysisChain():
                 streamer.set(10000)
 
                 # Frequency resolution (MHz).
-                dds = getattr(self.soc, self.dict['chain']['ddscic'])
+                dds = getattr(self.soc, self.dict['chain']['dds'])
                 self.dict['fr'] = dds.DF_DDS/1e6
  
     def update_settings(self):
@@ -1547,28 +1969,30 @@ class AnalysisChain():
         return('Key Not Found')
     
     def source(self, source="product"):
-        # Get ddscic block.
-        ddscic = getattr(self.soc, self.dict['chain']['ddscic'])
+        # Get dds block.
+        dds_b = getattr(self.soc, self.dict['chain']['dds'])
         
-        # Set source.
-        ddscic.dds_outsel(source)
+        if dds_b is not None:
+            # Set source.
+            dds_b.dds_outsel(source)
     
     def set_decimation(self, value=2, autoq=True):
         """
-        Sets the decimation value of the DDS+CIC block of the chain.
+        Sets the decimation value of the DDS+CIC or CIC block of the chain.
         
         :param value: desired decimation value.
         :type value: int
         :param autoq: flag for automatic quantization setting.
         :type autoq: boolean
         """
-        # Get ddscic block.
-        ddscic = getattr(self.soc, self.dict['chain']['ddscic'])
-        
-        if autoq:
-            ddscic.decimation(value)
-        else:
-            ddscic.decimate(value)
+        # Get block.
+        cic_b   = getattr(self.soc, self.dict['chain']['cic'])
+
+        if cic_b is not None:
+            if autoq:
+                cic_b.decimation(value)
+            else:
+                cic_b.decimate(value)
     
     def unmask(self, ch=0, single=True, verbose=False):
         """
@@ -1605,13 +2029,15 @@ class AnalysisChain():
         else:
             return False          
           
-    def get_bin(self, f=0, verbose=False):
+    def get_bin(self, f=0, force_dds=False, verbose=False):
         """
         Get data from the channels nearest to the specified frequency.
         Channel bandwidth depends on the selected chain options.
         
         :param f: specified frequency in MHz.
         :type f: float
+        :param force_dds: flag for forcing programming dds_dual.
+        :type force_dds: boolean
         :param verbose: flag for verbose output.
         :type verbose: boolean
         :return: [i,q] data from the channel.
@@ -1619,8 +2045,8 @@ class AnalysisChain():
         """
         # Get blocks.
         pfb_b = getattr(self.soc, self.dict['chain']['pfb'])
-        dds_b = getattr(self.soc, self.dict['chain']['ddscic'])
-        
+        dds_b = getattr(self.soc, self.dict['chain']['dds'])
+
         # Sanity check: is frequency on allowed range?
         fmix = abs(self.dict['mixer']['freq'])
         fs = self.dict['chain']['fs']
@@ -1633,8 +2059,11 @@ class AnalysisChain():
             fdds = f_ - pfb_b.ch2freq(k)
             
             # Program dds frequency.
-            dds_b.set_ddsfreq(ch_id=k, f=fdds*1e6)
-            
+            if self.dict['chain']['subtype'] == 'single':
+                dds_b.set_ddsfreq(ch_id=k, f=fdds*1e6)
+            elif self.dict['chain']['subtype'] == 'dual' and force_dds:
+                dds_b.ddscfg(f = fdds*1e6, g = 0.99, ch = k)
+
             if verbose:
                 print("{}: f = {} MHz, fd = {} MHz, k = {}, fdds = {}".format(__class__.__name__, f, f_, k, fdds))
                 
@@ -1715,8 +2144,12 @@ class AnalysisChain():
     
     @property
     def decimation(self):
-        ddscic = getattr(self.soc, self.dict['chain']['ddscic'])
-        return ddscic.get_decimate()
+        cic_b   = getattr(self.soc, self.dict['chain']['cic'])
+
+        if cic_b is not None:
+            return cic_b.get_decimate()
+        else:
+            return 1
     
     @property
     def name(self):
@@ -1864,12 +2297,15 @@ class SynthesisChain():
             
                 if verbose:
                     print("{}: f = {} MHz, fd = {} Mhz, k = {}, fdds = {} MHz".format(__class__.__name__, f, f_, k, fdds))
-            else:
+            elif self.dict['type'] == 'gen':
                 ctrl = getattr(self.soc, self.dict['chain']['ctrl'])
                 ctrl.set(f = f_, g = g)
 
                 if verbose:
                     print("{}: f = {} MHz, fd = {} Mhz".format(__class__.__name__, f, f_))
+            
+            else:
+                raise RuntimeError("{}: not a recognized chain.".format(__class__.__name__))
             
         else:
             raise ValueError("Frequency value %f out of allowed range [%f,%f]" %(f, fmix-fs/2, fmix+fs/2))          
@@ -1931,63 +2367,104 @@ class SynthesisChain():
     
 class KidsChain():
     # Constructor.
-    def __init__(self, soc, analysis, synthesis, name=""):
+    def __init__(self, soc, analysis=None, synthesis=None, dual=None, name=""):
         # Sanity check. Is soc the right type?
         if isinstance(soc, MkidsSoc) == False:
-            raise RuntimeError("%s (MkidsSoc, SynthesisChain)" % __class__.__name__)
+            raise RuntimeError("%s (MkidsSoc, Analysischain, SynthesisChain)" % __class__.__name__)
         else:
             # Soc instance.
             self.soc = soc
             
             # Chain name.
             self.name = name
-            
-            # Analysis chain.
-            self.analysis = AnalysisChain(self.soc, analysis)
-            
-            # Synthesis chain.
-            self.synthesis = SynthesisChain(self.soc, synthesis)
-            
-            # Frequency resolution.
-            fr_min = min(self.analysis.fr,self.synthesis.fr)
-            fr_max = max(self.synthesis.fr,self.synthesis.fr)
-            self.fr = fr_max
-            
-            # Check Integer Ratio.
-            div=fr_max/fr_min
-            div_i=int(div)
-            if div != div_i:
-                print("{} WARNING: analysis/syhtnesis frequency resolutions are not Integer.".format(__class__.__name__))
+
+            # Force dds flag.
+            self.force_dds = False
+
+            # Check Chains.
+            if analysis is None and synthesis is None:
+                # Must be a dual chain.
+                if dual is None:
+                    raise RuntimeError("%s Invalid Chains Provided. Options are Analysis,Synthesis or Dual" % __class__.name__)
+                else:
+                    # Dual Chain flag.
+                    self.IS_DUAL = True
+
+                    self.analysis   = AnalysisChain(self.soc, dual['analysis'])
+                    self.synthesis  = SynthesisChain(self.soc, dual['synthesis'])
+
+                    # Frequency resolution should be the same!!
+                    if self.analysis.fr != self.synthesis.fr:
+                        raise RuntimeError("%s Analysis and Syhtiesis Chains of provided Dual Chain are not equal." %__class__.__name)
+
+                    self.fr = self.analysis.fr
+
+            else:
+                if analysis is not None and synthesis is None:
+                    raise RuntimeError("%s Synthesis Chain Missing" % __class__.name__)
+                if analysis is None and syntheis is not None:
+                    raise RuntimeError("%s Analysis Chain Missing" % __class__.name__)
+                    
+                # Dual Chain flag.
+                self.IS_DUAL = False
+
+                # Analysis chain.
+                self.analysis = AnalysisChain(self.soc, analysis)
+                
+                # Synthesis chain.
+                self.synthesis = SynthesisChain(self.soc, synthesis)
+
+                # Flag to force dds programming.
+                # If a dual analysis chain is used with a gen-based synthesis, I need to force
+                # the configuration of the DDS (given that it is not programmed at generation).
+                if self.analysis.dict['chain']['subtype'] == 'dual' and self.synthesis.dict['type'] == 'gen':
+                    self.force_dds = True
+                
+                # Frequency resolution.
+                fr_min = min(self.analysis.fr,self.synthesis.fr)
+                fr_max = max(self.synthesis.fr,self.synthesis.fr)
+                self.fr = fr_max
+                
+                # Check Integer Ratio.
+                div=fr_max/fr_min
+                div_i=int(div)
+                if div != div_i:
+                    print("{} WARNING: analysis/syhtnesis frequency resolutions are not Integer.".format(__class__.__name__))
                 
     def fq(self, f):
         return int(np.round(f/self.fr))*self.fr
 
     def set_mixer_frequency(self, f):
-        self.analysis.set_mixer_frequency(-f)
+        self.analysis.set_mixer_frequency(-f) # -fmix to get upper sideband and avoid mirroring.
         self.synthesis.set_mixer_frequency(f)
 
-    def set_tone(self, f=0, g=0.5, autoq=True, verbose=False):
-        # Quantize to frequency resolution.
-        if autoq:
-            f = self.fq(f)  
-
+    def set_tone(self, f=0, g=0.5, verbose=False):
         # Set tone using synthesis chain.
+        self.synthesis.alloff()
         self.synthesis.set_tone(f=f, g=g, verbose=verbose)
+    
+    def source(self, source="product"):
+        # Set source using analysis chain.
+        self.analysis.source(source = source)
+
+    def set_decimation(self, value = 2, autoq = True):
+        # Set decimation using analysis chain.
+        self.analysis.set_decimation(value = value, autoq = autoq)
+
+    def get_bin(self, f=0, verbose=False):
+        # Get data from bin using analysis chain.
+        return self.analysis.get_bin(f=f, force_dds = self.force_dds, verbose=verbose)
     
     def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False):
         if set_mixer:
             # Set fmixer at the center of the sweep.
             fmix = (fstart + fend)/2
             fmix = self.fq(fmix)
+            self.set_mixer_frequency(fmix)
 
-            self.analysis.set_mixer_frequency(-fmix) # -fmix to get upper sideband and avoid mirroring.
-            self.synthesis.set_mixer_frequency(fmix)
-        
         # Default settings.
         self.analysis.set_decimation(decimation)
-        self.analysis.qout(3)
         self.analysis.source("product")
-        self.synthesis.qout(3)
         
         f_v = np.linspace(fstart,fend,N)
 
@@ -2001,6 +2478,8 @@ class KidsChain():
         fq_v = np.zeros(N)
         a_v = np.zeros(N)
         phi_v = np.zeros(N)
+        i_v = np.zeros(N)
+        q_v = np.zeros(N)
         
         print("Starting sweep:")
         print("  * Start      : {} MHz".format(fstart))
@@ -2013,11 +2492,10 @@ class KidsChain():
             fq = self.fq(f)
             
             # Set output tone.
-            self.synthesis.alloff()
-            self.synthesis.set_tone(f=fq, g=g, verbose=verbose)
+            self.set_tone(f=fq, g=g, verbose=verbose)
             
             # Get input data.
-            [xi,xq] = self.analysis.get_bin(fq, verbose=verbose)
+            [xi,xq] = self.get_bin(fq, verbose=verbose)
           
             i0 = 100
             i1 = -100
@@ -2037,7 +2515,7 @@ class KidsChain():
             else:
                 print("{}".format(i), end=", ")
          
-        return fq_v,a_v,phi_v    
+        return fq_v,a_v,phi_v
 
     def phase_slope(self, f, phi):
         # Compute phase jumps.
@@ -2197,6 +2675,22 @@ class MkidsSoc(Overlay, QickConfig):
             lines.append("\t%d:\t Synthesis Chain: DAC Tile = %d, DAC Ch = %d, fs = %.3f MHz, Number of Channels = %d %s" %
                          (i, int(chain['dac']['tile']), int(chain['dac']['ch']), chain['fs'], chain['nch'], name))
 
+        # Dual Chains.
+        if len(self['dual']) > 0:
+            lines.append("\n\tDual Chains")
+            for i, chain in enumerate(self['dual']):
+                chain_a = chain['analysis']
+                chain_s = chain['synthesis']
+                name = ""
+                if 'name' in chain.keys():
+                    name = chain['name']
+                lines.append("\tDual %d: %s" % (i,name))
+                lines.append("\t\tAnalysis : ADC Tile = %d, ADC Ch = %d, fs = %.3f MHz, Number of Channels = %d" %
+                            (int(chain_a['adc']['tile']), int(chain_a['adc']['ch']), chain_a['fs'], chain_a['nch']))
+                lines.append("\t\tSynthesis: DAC Tile = %d, DAC Ch = %d, fs = %.3f MHz, Number of Channels = %d\n" %
+                             (int(chain_s['dac']['tile']), int(chain_s['dac']['ch']), chain_s['fs'], chain_s['nch']))
+
+
         lines.append("\n\t%d ADCs:" % (len(self['adcs'])))
         for adc in self['adcs']:
             tile, block = [int(c) for c in adc]
@@ -2239,7 +2733,7 @@ class MkidsSoc(Overlay, QickConfig):
 
         # PFB for Synthesis.
         self.pfbs_out = []
-        pfbs_out_drivers = set([AxisPfbSynth4x512V1])
+        pfbs_out_drivers = set([AxisPfbSynth4x512V1, AxisPfbSynth4x1024V1])
 
         # SG for Synthesis.
         self.gens = []
@@ -2262,6 +2756,11 @@ class MkidsSoc(Overlay, QickConfig):
             # Does this pfb has a DDSCIC?
             if pfb.HAS_DDSCIC:
                 block = getattr(self, pfb.dict['ddscic'])
+                block.configure(pfb.dict['freq']['fb'])
+
+            # Does this pfb has a DDS_DUAL?
+            if pfb.HAS_DDS_DUAL:
+                block = getattr(self, pfb.dict['dds'])
                 block.configure(pfb.dict['freq']['fb'])
 
             # Does this pfb has a CHSEL?
@@ -2300,12 +2799,23 @@ class MkidsSoc(Overlay, QickConfig):
         self['dacs'] = list(self.dacs.keys())
         self['analysis'] = []
         self['synthesis'] = []
+        self['dual'] = []
         for pfb in self.pfbs_in:
             thiscfg = {}
             thiscfg['type'] = 'analysis'
             thiscfg['adc'] = pfb.dict['adc']
             thiscfg['pfb'] = pfb.fullpath
-            thiscfg['ddscic'] = pfb.dict['ddscic']
+            if pfb.HAS_DDSCIC:
+                thiscfg['subtype'] = 'single'
+                thiscfg['dds'] = pfb.dict['ddscic']
+                thiscfg['cic'] = pfb.dict['ddscic']
+            elif pfb.HAS_DDS_DUAL:
+                thiscfg['subtype'] = 'dual'
+                thiscfg['dds'] = pfb.dict['dds']
+                if pfb.HAS_CIC:
+                    thiscfg['cic'] = pfb.dict['cic']
+                else:
+                    thiscfg['cic'] = None
             thiscfg['chsel'] = pfb.dict['chsel']
             thiscfg['streamer'] = pfb.dict['streamer']
             thiscfg['dma'] = pfb.dict['dma']
@@ -2318,6 +2828,10 @@ class MkidsSoc(Overlay, QickConfig):
         for pfb in self.pfbs_out:
             thiscfg = {}
             thiscfg['type'] = 'synthesis'
+            if pfb.HAS_DDS:
+                thiscfg['subtype'] = 'single'
+            if pfb.HAS_DDS_DUAL:
+                thiscfg['subtype'] = 'dual'
             thiscfg['dac'] = pfb.dict['dac']
             thiscfg['pfb'] = pfb.fullpath
             thiscfg['dds'] = pfb.dict['dds']
@@ -2330,12 +2844,34 @@ class MkidsSoc(Overlay, QickConfig):
         for gen in self.gens:
             thiscfg = {}
             thiscfg['type'] = 'synthesis'
+            thiscfg['subtype'] = 'single'
             thiscfg['dac'] = gen.dict['dac']
             thiscfg['gen'] = gen.fullpath
             thiscfg['ctrl'] = gen.dict['ctrl']
             thiscfg['fs'] = gen.dict['freq']['fs']
             thiscfg['nch'] = 1
             self['synthesis'].append(thiscfg)
+
+        # Search for dual chains.
+        for ch_a in self['analysis']:
+            # Is it dual?
+            if ch_a['subtype'] == 'dual':
+                # Find matching chain (they share a axis_dds_dual block).
+                found = False
+                dds = ch_a['dds']
+                for ch_s in self['synthesis']:
+                    # Is it dual?
+                    if ch_s['subtype'] == 'dual':
+                        if dds == ch_s['dds']:
+                            found = True 
+                            thiscfg = {}
+                            thiscfg['analysis']  = ch_a
+                            thiscfg['synthesis'] = ch_s
+                            self['dual'].append(thiscfg)
+                    
+                # If not found print an error.
+                if not found:
+                    raise RuntimeError("Could not find dual chain for PFB {}".format(ch_a['pfb']))
 
     def config_clocks(self, force_init_clks):
         """
