@@ -1,0 +1,5 @@
+Updated Firmware/Software drivers.
+
+Include both the latest qick library and soft directory into the pynq search path (see attached notebook).
+
+Software should detect blocks automatically and print out information.
