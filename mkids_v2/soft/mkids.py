@@ -1041,6 +1041,8 @@ class MkidsSoc(Overlay, QickConfig):
         QickConfig.__init__(self)
 
         self['board'] = os.environ["BOARD"]
+        if self['board'] == "ZCU208":
+            self['board'] = "ZCU216"
 
         # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
         self.list_rf_blocks(
