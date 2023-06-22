@@ -138,6 +138,125 @@ class AxisChSelPfbV2(SocIp):
     def ch2idx(self,ch):
         return np.mod(ch,self.L)
 
+class AxisChSelPfbV3(SocIp):
+    bindto = ['user.org:user:axis_chsel_pfb_v3:1.0']
+    REGISTERS = {   'start_reg' : 0, 
+                    'punct_reg' : 1}
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Generics.
+        self.B      = int(description['parameters']['B'])
+        self.L      = int(description['parameters']['L'])        
+        self.NCH    = int(description['parameters']['NCH'])        
+
+        # Number of transactions per frame.
+        self.NT     = self.NCH//self.L
+
+        # Dictionary for enabled transactions and channels.
+        self.dict = {}
+        self.dict['punct'] = 0
+        self.dict['tran']  = []
+        self.dict['chan']  = []
+
+        # Default registers.
+        self.start_reg  = 0
+        self.punct_reg  = 0
+        
+        # Mask all channels.
+        self.alloff()
+        
+        # Start block.
+        self.start()
+
+    def alloff(self):
+        # All bits to 0.
+        self.punct_reg = 0
+        
+        # Update dictionary.
+        self.dict['punct'] = 0
+        self.dict['tran']  = [] 
+        self.dict['chan']  = [] 
+    
+    def stop(self):
+        self.start_reg = 0
+
+    def start(self):
+        self.start_reg = 1
+
+    def tran2channels(self, tran):
+        # Sanity check.
+        if tran < self.NT:
+            return np.arange(tran*self.L, (tran+1)*self.L)
+        else:
+            raise ValueError("%s: transaction should be within [0,%d]" % (self.fullpath, self.NT-1))
+        
+    @property
+    def enabled_channels(self):
+        if len(self.dict['chan']) > 0:
+            self.dict['chan'].sort()
+            return self.dict['chan'].astype(int)
+        else:
+            return self.dict['chan']
+
+    def set(self, ch, single=True, verbose=False):
+        # Sanity check.
+        if ch < 0 or ch >= self.NCH:
+            raise ValueError("%s: channel must be within [0,%d]" %(self.fullpath, self.NCH-1))
+        else:
+            if verbose:
+                print("{}: channel = {}".format(self.fullpath, ch))
+
+            # Is channel already enabled?
+            if ch not in self.dict['chan']:
+                # Need to mask previously un-masked channels?
+                if single:
+                    self.alloff()
+
+                    if verbose:
+                        print("{}: masking previously enabled channels.".format(self.fullpath))
+
+                # Transaction number and bit index.
+                ntran, bit = self.ch2tran(ch)
+
+                if verbose:
+                    print("{}: ch = {}, ntran = {}, bit = {}".format(self.fullpath, ch, ntran, bit))
+
+                # Enable neighbors.
+                self.dict['chan'] = np.append(self.dict['chan'], self.tran2channels(ntran))
+
+                # Enable transaction.
+                self.dict['tran'] = np.append(self.dict['tran'], ntran)
+
+                # Data Mask.
+                data = self.dict['punct'] + 2**bit
+                if verbose:
+                    print("{}: Original Mask: {}, Updated Mask: {}".format(self.fullpath, self.dict['punct'], data))
+                self.dict['punct'] = data
+            
+                # Write Value.
+                self.punct_reg = data
+                self.stop()
+                self.start()
+            
+    def set_single(self,ch):
+        self.alloff()
+        self.set(ch)
+            
+    def ch2tran(self,ch):
+        # Transaction number.
+        ntran = ch//self.L
+
+        # Bit.
+        bit = ntran%32
+        
+        return ntran, bit
+    
+    def ch2idx(self,ch):
+        return np.mod(ch,self.L)
+
 class AxisStreamerV1(SocIp):
     # AXIS_Streamer V1 registers.
     # START_REG
