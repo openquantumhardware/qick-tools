@@ -126,6 +126,13 @@ class AbsPfbAnalysis(SocIp):
                 self.dict['chsel'] = block
 
                 ((block, port),) = soc.metadata.trace_bus(block, 'm_axis')
+            elif blocktype == "axis_chsel_pfb_v3":
+                self.HAS_CHSEL = True
+
+                # Add chsel into dictionary.
+                self.dict['chsel'] = block
+
+                ((block, port),) = soc.metadata.trace_bus(block, 'm_axis')
             elif blocktype == "axis_streamer_v1":
                 self.HAS_STREAMER = True
 
@@ -241,9 +248,10 @@ class AbsPfbAnalysis(SocIp):
 class AxisPfbAnalysis(AbsPfbAnalysis):
     """
     AxisPfbAnalysis class
-    Supports AxisPfb4x1024V1, AxisPfbaPr4x256V1
+    Supports AxisPfb4x1024V1, AxisPfbaPr4x256V1, AxisPfb4x64V1
     """
     bindto = ['user.org:user:axis_pfb_4x1024_v1:1.0'   ,
+              'user.org:user:axis_pfb_4x64_v1:1.0'     ,
               'user.org:user:axis_pfba_pr_4x256_v1:1.0']
     REGISTERS = {'qout_reg' : 0}
     
@@ -453,9 +461,10 @@ class AbsPfbSynthesis(SocIp):
 class AxisPfbSynthesis(AbsPfbSynthesis):
     """
     AxisPfbSynthesis class
-    Supports AxisPfbSynth4x1024V1, AxisPfbsPr4x256V1
+    Supports AxisPfbSynth4x1024V1, AxisPfbsPr4x256V1, AxisPfbSynth4x64V1
     """
     bindto = ['user.org:user:axis_pfbsynth_4x1024_v1:1.0',
+              'user.org:user:axis_pfbsynth_4x64_v1:1.0'  ,
               'user.org:user:axis_pfbs_pr_4x256_v1:1.0'  ]
     REGISTERS = {'qout_reg':0}
     
