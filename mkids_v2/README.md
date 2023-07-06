@@ -4,13 +4,13 @@ Software to use mkids firmware on all platforms.  Each instance of the firmware 
 
 Once loaded, firmware can report the availability of:
 
-* Synthesis chains: the DAC channel(s) available to generate tones
+* Synthesis chains: the DAC channel(s) available to send signals
 
 * Analysis chains:  the ADC channel(s) available to read signals 
 
-* Dual chains:  A DAC&ADC pair that share a common digital mixer.  This is a combination of a "Synthesis chain" and an "Analyis chain", with additional logic that allows control and read out MKIDs detectors.
+* Dual chains:  A DAC&ADC pair that share a common digital mixer.  This is a combination of a "Synthesis chain" and an "Analysis chain", with additional logic that allows control and read out MKIDs detectors.
 
-* Sim chains:  A DAC&ADC pair that share a common digital mixer.  This is a combination of a "Synthesis chain" and an "Analyis chain", with additional logic that simulates resonators.
+* Sim chains:  A DAC&ADC pair that share a common digital mixer.  This is a combination of a "Synthesis chain" and an "Analysis chain", with additional logic that simulates resonators.
 
 Directories include:
 
