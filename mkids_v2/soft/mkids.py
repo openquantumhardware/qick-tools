@@ -788,7 +788,7 @@ class KidsChain():
         # Get data from bin using analysis chain.
         return self.analysis.get_bin(f=f, force_dds = self.force_dds, verbose=verbose)
     
-    def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False):
+    def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True):
         if set_mixer:
             # Set fmixer at the center of the sweep.
             fmix = (fstart + fend)/2
@@ -804,7 +804,8 @@ class KidsChain():
         # Check frequency resolution.
         fr = f_v[1] - f_v[0]
         if fr < self.fr:
-            print("Required resolution too small. Redefining frequency vector with a resolution of {} MHz".format(self.fr))
+            if verbose:
+                print("Required resolution too small. Redefining frequency vector with a resolution of {} MHz".format(self.fr))
             f_v = np.arange(self.fq(fstart), self.fq(fend), self.fr)
             N = len(f_v)
         
@@ -814,12 +815,13 @@ class KidsChain():
         i_v = np.zeros(N)
         q_v = np.zeros(N)
         
-        print("Starting sweep:")
-        print("  * Start      : {} MHz".format(fstart))
-        print("  * End        : {} MHz".format(fend))
-        print("  * Resolution : {} MHz".format(f_v[1]-f_v[0]))
-        print("  * Points     : {}".format(N))
-        print(" ")
+        if showProgress:
+            print("Starting sweep:")
+            print("  * Start      : {} MHz".format(fstart))
+            print("  * End        : {} MHz".format(fend))
+            print("  * Resolution : {} MHz".format(f_v[1]-f_v[0]))
+            print("  * Points     : {}".format(N))
+            print(" ")
         for i,f in enumerate(f_v):
             # Quantize frequency.
             fq = self.fq(f)
@@ -846,7 +848,7 @@ class KidsChain():
             if verbose:
                 print("i = {}, f = {} MHz, fq = {} MHz, a = {}, phi = {}".format(i,f,fq,a,phi))
             else:
-                print("{}".format(i), end=", ")
+                if showProgress: print("{}".format(i), end=", ")
          
         return fq_v,a_v,phi_v
 
