@@ -6,6 +6,8 @@ from drivers.misc import *
 
 import numpy as np
 
+from tqdm.notebook import trange, tqdm
+
 class RFDC(xrfdc.RFdc):
     """
     Extends the xrfdc driver.
@@ -788,7 +790,7 @@ class KidsChain():
         # Get data from bin using analysis chain.
         return self.analysis.get_bin(f=f, force_dds = self.force_dds, verbose=verbose)
     
-    def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True):
+    def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True, doProgress=False):
         if set_mixer:
             # Set fmixer at the center of the sweep.
             fmix = (fstart + fend)/2
@@ -822,7 +824,15 @@ class KidsChain():
             print("  * Resolution : {} MHz".format(f_v[1]-f_v[0]))
             print("  * Points     : {}".format(N))
             print(" ")
-        for i,f in enumerate(f_v):
+
+        if doProgress:
+            iValues = trange(len(f_v))
+        else:
+            iValues = range(len(f_v))
+
+        #for i,f in enumerate(f_v):
+        for i in iValues:
+            f = f_v[i]
             # Quantize frequency.
             fq = self.fq(f)
             
