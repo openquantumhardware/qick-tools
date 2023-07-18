@@ -24,4 +24,4 @@ Drivers and classes
 
 # zcu216
 
-Firmware (.bit and .hwh files) and a notebooke for each version of the firmware.
+Firmware (.bit and .hwh files) and a notebook for each version of the firmware.
