@@ -32,10 +32,10 @@ class Scan():
         # Disable all resonators
         self.simuChain.alloff()
         # Some useful constants
-        fsDualOut = self.soc['dual'][0]['synthesis']['fs']
-        fsDualIn = self.soc['dual'][0]['analysis']['fs']
-        fsSimuOut = self.soc['simu'][0]['synthesis']['fs']
-        fsSimuIn = self.soc['simu'][0]['analysis']['fs']
+        fsDualOut = self.soc['dual'][iKids]['synthesis']['fs']
+        fsDualIn = self.soc['dual'][iKids]['analysis']['fs']
+        fsSimuOut = self.soc['simu'][iSimu]['synthesis']['fs']
+        fsSimuIn = self.soc['simu'][iSimu]['analysis']['fs']
         assert fsDualOut == fsDualIn ==fsSimuOut == fsSimuIn, "fs not all equal: fsDualOut=%f, fsDualIn=%f, fsSimuOut=%f, fsSimuIn=%f"%(fsDualOut, fsDualIn, fsSimuOut, fsSimuIn)
         self.fs = fsDualOut
 
@@ -92,6 +92,21 @@ class Scan():
                 if oddInds:
                     fAliased -= (nZone-1)*fn
             return fAliased
+        
+    def inFreq2ch(self, inFreqs):
+        """ Return input channel numbers of the input frequencies"""
+        return self.kidsChain.analysis.freq2ch(inFreqs)
+    def inCh2Freq(self, inChs):
+        """ Return the frequency at the center of the input channels"""
+        return self.kidsChain.analysis.ch2freq(inChs)
+
+    def outFreq2ch(self, outFreqs):
+        """ Return input channel numbers of the output frequencies"""
+        return self.kidsChain.synthesis.freq2ch(outFreqs)
+    def outCh2Freq(self, outChs):
+        """ Return the frequency at the center of the output channels"""
+        return self.kidsChain.synthesis.ch2freq(outChs)
+
 
 def availableBitfiles():
     """ Return a list of firmware names available. """

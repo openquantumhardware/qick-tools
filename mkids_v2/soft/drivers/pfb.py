@@ -225,23 +225,80 @@ class AbsPfbAnalysis(SocIp):
         # If I got here, adc not found.
         raise RuntimeError("Cannot find correspondance with any ADC for ports %s,%s" % (port0,port1))
 
+
     def freq2ch(self,f):
-        # Check if frequency is on -fs/2 .. fs/2.
-        if ( -self.dict['freq']['fs']/2 < f < self.dict['freq']['fs']/2):
-            k = np.round(f/self.dict['freq']['fc'])
+        """
+        Convert from frequency to PFB channel number
+        
+        Parameters:
+        -----------
+            f : float, list of floats, or numpy array of floats
+                frequency in MHz
+        
+        Returns:
+        --------
+            ch : int or numpyr array of np.int64
+                The channel number that contains the frequency
+            
+        Raises:
+            ValueError
+                if any of the frequencies are outside the allowable range of +/- fs/2
+                
+        """
+        # if f is a list convert it to numpy array
+        if isinstance(f, list):
+            f = np.array(f)
+            
+        # Check if all frequencies are in -fs/2 .. fs/2
+        fMax = self.dict['freq']['fs']/2
+        if np.any(abs(f) > fMax):
+                    raise ValueError("Frequency value %s out of allowed range [%f,%f]" % (str(f),-fMax, fMax))
 
-            if k >= 0:
-                return int(k)
-            else:
-                return int (self.dict['N'] + k)
-
-    def ch2freq(self,ch):
-        if ch >= self.dict['N']/2:
-            ch_ = self.dict['N'] - ch
-            return -(ch_*self.dict['freq']['fc'])
+        k = np.round(f/self.dict['freq']['fc']).astype(int)
+        if isinstance(k,np.int64):
+            if k < 0:
+                k += self.dict['N']
         else:
-            return ch*self.dict['freq']['fc']
-
+            k[k<0] += self.dict['N']
+        return k
+    
+    def ch2freq(self,ch):
+        """
+        Convert from PFB input channel number to frequency at center of bin
+        
+        Parameters:
+        -----------
+           ch : int or numpy array of np.int64
+                The channel number that contains the frequency
+         
+        Returns:
+        --------
+           f : float, list of floats, or numpy array of floats
+                frequency in MHz at the center of the bin
+             
+        Raises:
+            ValueError
+                if any of the bin numbers are out of range [0,N)
+                
+        """
+        # if ch is a list convert it to numpy array
+        if isinstance(ch, list):
+            ch = np.array(ch)
+        N = self.dict['N']
+        if np.any(ch < 0) or np.any(ch >= N):
+                    raise ValueError("Channel value %s out of allowed range [0,%d)" % (str(ch),N))
+      
+        fc = self.dict['freq']['fc']
+        freq = ch*fc
+        
+        if isinstance(ch, int) or isinstance(ch, np.int64):
+            if ch >= N//2: 
+                freq -= N*fc
+        else:           
+            freq = ch*fc
+            freq[ch >= N//2] -= N*fc
+        return freq
+            
     def qout(self, qout):
         self.qout_reg = qout
 
@@ -439,21 +496,79 @@ class AbsPfbSynthesis(SocIp):
 
 
     def freq2ch(self,f):
-        # Check if frequency is on -fs/2 .. fs/2.
-        if ( -self.dict['freq']['fs']/2 < f < self.dict['freq']['fs']/2):
-            k = np.round(f/self.dict['freq']['fc'])
+        """
+        Convert from frequency to PFB channel number
+        
+        Parameters:
+        -----------
+            f : float, list of floats, or numpy array of floats
+                frequency in MHz
+        
+        Returns:
+        --------
+            ch : int or numpyr array of np.int64
+                The channel number that contains the frequency
+            
+        Raises:
+            ValueError
+                if any of the frequencies are outside the allowable range of +/- fs/2
+                
+        """
 
-            if k >= 0:
-                return int(k)
-            else:
-                return int (self.dict['N'] + k)
+        # if f is a list convert it to numpy array
+        if isinstance(f, list):
+            f = np.array(f)
+            
+        # Check if all frequencies are in -fs/2 .. fs/2
+        fMax = self.dict['freq']['fs']/2
+        if np.any(abs(f) > fMax):
+                    raise ValueError("Frequency value %s out of allowed range [%f,%f]" % (str(f),-fMax, fMax))
+
+        k = np.round(f/self.dict['freq']['fc']).astype(int)
+        if isinstance(k,np.int64):
+            if k < 0:
+                k += self.dict['N']
+        else:
+            k[k<0] += self.dict['N']
+        return k
 
     def ch2freq(self,ch):
-        if ch >= self.dict['N']/2:
-            ch_ = self.dict['N'] - ch
-            return -(ch_*self.dict['freq']['fc'])
-        else:
-            return ch*self.dict['freq']['fc']
+        """
+        Convert from PFB input channel number to frequency at center of bin
+        
+        Parameters:
+        -----------
+           ch : int or numpy array of np.int64
+                The channel number that contains the frequency
+         
+        Returns:
+        --------
+           f : float, list of floats, or numpy array of floats
+                frequency in MHz at the center of the bin
+             
+        Raises:
+            ValueError
+                if any of the bin numbers are out of range [0,N)
+                
+        """
+
+        # if ch is a list convert it to numpy array
+        if isinstance(ch, list):
+            ch = np.array(ch)
+        N = self.dict['N']
+        if np.any(ch < 0) or np.any(ch >= N):
+                    raise ValueError("Channel value %s out of allowed range [0,%d)" % (str(ch),N))
+      
+        fc = self.dict['freq']['fc']
+        freq = ch*fc
+        
+        if isinstance(ch, int) or isinstance(ch, np.int64):
+            if ch >= N//2: 
+                freq -= N*fc
+        else:           
+            freq = ch*fc
+            freq[ch >= N//2] -= N*fc
+        return freq
 
     def qout(self, value):
         self.qout_reg = value

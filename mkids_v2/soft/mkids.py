@@ -375,19 +375,43 @@ class AnalysisChain():
             return streamer_b.get_data_all(verbose=verbose)
 
     def freq2ch(self, f):
+        """
+        Convert from frequency to PFB channel number after subtracting mixer frequency
+        
+        Parameters:
+        -----------
+            f : float, list of floats, or numpy array of floats
+                frequency in MHz
+        
+        Returns:
+        --------
+            ch : int or numpyr array of np.int64
+                The channel number that contains the frequency
+            
+        Raises:
+            ValueError
+                if any of the (frequencies - mixer frequency) are outside the allowable range of +/- fs/2
+                
+        """
+
+        # if f is a list, convert it to an numpy array
+        if isinstance(f, list):
+            f = np.array(f)
+
+        #print("Hello from mkids.py freq2ch with f =",f)
         # Get blocks.
         pfb_b = getattr(self.soc, self.dict['chain']['pfb'])
         
-        # Sanity check: is frequency on allowed range?
         fmix = abs(self.dict['mixer']['freq'])
         fs = self.dict['chain']['fs']
-              
-        if (fmix-fs/2) < f < (fmix+fs/2):
+        
+        # Sanity check: is frequency in allowed range?
+        if np.any(np.abs(f-fmix) > fs/2):
+            raise ValueError("Frequency value %s out of allowed range [%f,%f]" % (str(f),fmix-fs/2,fmix+fs/2))
+        else:
             f_ = f - fmix
             return pfb_b.freq2ch(f_)
-        else:
-            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
-
+            
     def ch2freq(self, ch):
         # Get blocks.
         pfb_b = getattr(self.soc, self.dict['chain']['pfb'])
@@ -731,7 +755,7 @@ class KidsChain():
 
                     # Frequency resolution should be the same!!
                     if self.analysis.fr != self.synthesis.fr:
-                        raise RuntimeError("%s Analysis and Syhtiesis Chains of provided Dual Chain are not equal." %__class__.__name)
+                        raise RuntimeError("%s Analysis and Synthesis Chains of provided Dual Chain are not equal." %__class__.__name)
 
                     self.fr = self.analysis.fr
 
