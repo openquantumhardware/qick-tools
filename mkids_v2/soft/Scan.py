@@ -56,6 +56,7 @@ class Scan():
         self.simuChain.set_mixer_frequency(fMixer)
         self.kidsChain.set_mixer_frequency(fMixer)
         fMixerSet = self.get_mixer()
+        self.nZone = self.nZoneFromFTone(fMixerSet)
         return fMixerSet
 
     def get_mixer(self):
@@ -96,6 +97,7 @@ class Scan():
     def inFreq2ch(self, inFreqs):
         """ Return input channel numbers of the input frequencies"""
         return self.kidsChain.analysis.freq2ch(inFreqs)
+    
     def inCh2Freq(self, inChs):
         """ Return the frequency at the center of the input channels"""
         return self.kidsChain.analysis.ch2freq(inChs)
@@ -103,6 +105,7 @@ class Scan():
     def outFreq2ch(self, outFreqs):
         """ Return input channel numbers of the output frequencies"""
         return self.kidsChain.synthesis.freq2ch(outFreqs)
+    
     def outCh2Freq(self, outChs):
         """ Return the frequency at the center of the output channels"""
         return self.kidsChain.synthesis.ch2freq(outChs)

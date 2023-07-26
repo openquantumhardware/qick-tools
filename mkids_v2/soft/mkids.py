@@ -3,10 +3,10 @@ from qick.qick import *
 from drivers.pfb import *
 from drivers.dds import *
 from drivers.misc import *
-
 import numpy as np
 
 from tqdm.notebook import trange, tqdm
+
 
 class RFDC(xrfdc.RFdc):
     """
@@ -398,7 +398,6 @@ class AnalysisChain():
         if isinstance(f, list):
             f = np.array(f)
 
-        #print("Hello from mkids.py freq2ch with f =",f)
         # Get blocks.
         pfb_b = getattr(self.soc, self.dict['chain']['pfb'])
         
@@ -600,7 +599,7 @@ class SynthesisChain():
             ctrl.set(g=0)
 
     # Set single output.
-    def set_tone(self, f=0, g=0.99, cg=0, comp=False, verbose=False):
+    def set_tone(self, f=0, fi=0, g=0.99, cg=0, comp=False, verbose=False):
         # Sanity check: is frequency on allowed range?
         fmix = self.dict['mixer']['freq']
         fs = self.dict['chain']['fs']   
@@ -626,10 +625,10 @@ class SynthesisChain():
                             print("{}: channel {} is active".format(__class__.__name__, k))  
 
                         # Program dds frequency.
-                        dds_b.ddscfg(f = fdds*1e6, g = g, cg = cg, ch = k, comp = comp)
+                        dds_b.ddscfg(f = fdds*1e6, fi=fi, g = g, cg = cg, ch = k, comp = comp)
 
                         if verbose:
-                            print("{}: f = {} MHz, fd = {} Mhz, k = {}, fdds = {} MHz".format(__class__.__name__, f, f_, k, fdds))
+                            print("{}.set_tone: f = {} MHz, fd = {} Mhz, k = {}, fdds = {} MHz".format(__class__.__name__, f, f_, k, fdds))
 
                     # Channel is not active yet.
                     else:
@@ -652,8 +651,9 @@ class SynthesisChain():
                         print("{}: activate channel {}".format(__class__.__name__, k))  
 
                     # Program dds frequency.
+                    print("in mkids.py: aaa")
                     dds_b.ddscfg(f = fdds*1e6, g = g, cg = cg, ch = k, comp = comp)
-
+                    print("in mkids.py: bbb")
                     # Update active channel.
                     self.enabled_ch = k
 
@@ -670,20 +670,44 @@ class SynthesisChain():
         else:
             raise ValueError("Frequency value %f out of allowed range [%f,%f]" %(f, fmix-fs/2, fmix+fs/2))          
 
+
     def freq2ch(self, f):
+        """
+        Convert from frequency to PFB channel number after subtracting mixer frequency
+        
+        Parameters:
+        -----------
+            f : float, list of floats, or numpy array of floats
+                frequency in MHz
+        
+        Returns:
+        --------
+            ch : int or numpyr array of np.int64
+                The channel number that contains the frequency
+            
+        Raises:
+            ValueError
+                if any of the (frequencies - mixer frequency) are outside the allowable range of +/- fs/2
+                
+        """
+
+        # if f is a list, convert it to a numpy array
+        if isinstance(f, list):
+            f = np.array(f)
+
         # Get blocks.
         pfb_b = getattr(self.soc, self.dict['chain']['pfb'])
         
-        # Sanity check: is frequency on allowed range?
         fmix = abs(self.dict['mixer']['freq'])
         fs = self.dict['chain']['fs']
-                
-        if (fmix-fs/2) < f < (fmix+fs/2):
+        
+        # Sanity check: is frequency in allowed range?
+        if np.any(np.abs(f-fmix) > fs/2):
+            raise ValueError("Frequency value %s out of allowed range [%f,%f]" % (str(f),fmix-fs/2,fmix+fs/2))
+        else:
             f_ = f - fmix
             return pfb_b.freq2ch(f_)
-
-        else:
-            raise ValueError("Frequency value %f out of allowed range [%f,%f]" %(f, fmix-fs/2, fmix+fs/2))          
+            
 
     def ch2freq(self, ch):
         # Get blocks.
@@ -789,19 +813,71 @@ class KidsChain():
                 div=fr_max/fr_min
                 div_i=int(div)
                 if div != div_i:
-                    print("{} WARNING: analysis/syhtnesis frequency resolutions are not Integer.".format(__class__.__name__))
+                    print("{} WARNING: analysis/synthesis frequency resolutions are not Integer.".format(__class__.__name__))
                 
     def fq(self, f):
-        return int(np.round(f/self.fr))*self.fr
+        """Return frequency quantized by the frequency resolution"""
+        return (np.round(f/self.fr)).astype(np.int64)*self.fr
 
     def set_mixer_frequency(self, f):
         self.analysis.set_mixer_frequency(-f) # -fmix to get upper sideband and avoid mirroring.
         self.synthesis.set_mixer_frequency(f)
 
-    def set_tone(self, f=0, g=0.5, cg=0, comp=False, verbose=False):
+    def set_tone(self, f=0, fi=0, g=0.5, cg=0, comp=False, verbose=False):
         # Set tone using synthesis chain.
-        self.synthesis.set_tone(f=f, g=g, cg=cg, comp=comp, verbose=verbose)
-    
+        self.synthesis.set_tone(f=f, g=g, fi=fi, cg=cg, comp=comp, verbose=verbose)
+
+    def set_tones(self, freqs, fis, gs, cgs=None, verbose=False):
+        """
+        Set multiple tones
+        
+        Parameters:
+        ----------
+            freqs:  np array of double
+                Tone frequency (MHz)
+            fis: np array of double
+                Tone phase (Radians)
+            gs: np array of double
+                Gains, in the range [0,1) but note that it is your responsibilty 
+                confirm that freqs,fis,gs do not saturate
+            cgs: np array of complex doubles
+                compensation gain, or None to not apply compensation
+            verbose: boolean
+                default of False to run silently
+                
+        Returns:
+        --------
+            None, but it sets data values:
+            
+            qFreqs -- quantized frequencies (in MHz)
+            fis -- phases in Radians
+            gs -- gains in the range [0,1)
+            cgs -- compensations (or None)
+            chs -- channel numbers
+            fOffsets -- dds frequency, offset from the center of the bin
+                    
+        """
+
+        # Remember the tones that are being generated
+        self.qFreqs = self.fq(freqs)
+        self.fis = fis
+        fiDegs = np.degrees(self.fis)
+        self.gs = gs
+        self.cgs = cgs
+        pfb_b = getattr(self.soc, self.synthesis.dict['chain']['pfb'])
+        dds_b = getattr(self.soc, self.synthesis.dict['chain']['dds'])
+        fmix = self.synthesis.dict['mixer']['freq']
+        self.chs = pfb_b.freq2ch(self.qFreqs-fmix)
+        self.fOffsets = self.qFreqs - fmix - pfb_b.ch2freq(self.chs)
+        
+        # See whether compensation is being applied
+        comp = cgs is not None
+        if not comp:
+            cgs = np.zeros(len(freqs))
+        dds_b.alloff()
+        for fOffset,fiDeg,g,cg,ch in zip(self.fOffsets, fiDegs, gs, cgs, self.chs):
+            dds_b.ddscfg(f=fOffset*1e6, fi=fiDeg, g=g, cg=cg, ch=ch, comp=comp)
+
     def source(self, source="product"):
         # Set source using analysis chain.
         self.analysis.source(source = source)
@@ -814,7 +890,7 @@ class KidsChain():
         # Get data from bin using analysis chain.
         return self.analysis.get_bin(f=f, force_dds = self.force_dds, verbose=verbose)
     
-    def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True, doProgress=False):
+    def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True, doProgress=False, doPlotFirst=False):
         if set_mixer:
             # Set fmixer at the center of the sweep.
             fmix = (fstart + fend)/2
@@ -861,7 +937,7 @@ class KidsChain():
             fq = self.fq(f)
             
             # Set output tone.
-            self.set_tone(f=fq, g=g, verbose=verbose)
+            self.set_tone(f=fq, g=g, fi=0, verbose=verbose)
             
             # Get input data.
             [xi,xq] = self.get_bin(fq, verbose=verbose)
@@ -871,6 +947,13 @@ class KidsChain():
             iMean = xi[i0:i1].mean()
             qMean = xq[i0:i1].mean()
             
+            if doPlotFirst and i==0:
+                import matplotlib.pyplot as plt
+                plt.plot(xi, label="I")
+                plt.plot(xq, label="Q")
+                plt.legend()
+                plt.title("f=%f fmix=%f"%(f,fmix))
+                
             # Amplitude and phase.
             a = np.abs(iMean + 1j*qMean)
             phi = np.angle(iMean + 1j*qMean)
