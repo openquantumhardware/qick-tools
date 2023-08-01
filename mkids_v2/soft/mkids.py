@@ -374,6 +374,7 @@ class AnalysisChain():
             
             return streamer_b.get_data_all(verbose=verbose)
 
+        
     def freq2ch(self, f):
         """
         Convert from frequency to PFB channel number after subtracting mixer frequency
@@ -651,9 +652,7 @@ class SynthesisChain():
                         print("{}: activate channel {}".format(__class__.__name__, k))  
 
                     # Program dds frequency.
-                    print("in mkids.py: aaa")
                     dds_b.ddscfg(f = fdds*1e6, g = g, cg = cg, ch = k, comp = comp)
-                    print("in mkids.py: bbb")
                     # Update active channel.
                     self.enabled_ch = k
 
@@ -855,6 +854,8 @@ class KidsChain():
             cgs -- compensations (or None)
             chs -- channel numbers
             fOffsets -- dds frequency, offset from the center of the bin
+            ntrans -- transfer number (used for unpacking data)
+            idxs -- index number (used for unpacking data)
                     
         """
 
@@ -866,17 +867,20 @@ class KidsChain():
         self.cgs = cgs
         pfb_b = getattr(self.soc, self.synthesis.dict['chain']['pfb'])
         dds_b = getattr(self.soc, self.synthesis.dict['chain']['dds'])
+        chsel = getattr(self.soc, self.analysis.dict['chain']['chsel'])
         fmix = self.synthesis.dict['mixer']['freq']
         self.chs = pfb_b.freq2ch(self.qFreqs-fmix)
         self.fOffsets = self.qFreqs - fmix - pfb_b.ch2freq(self.chs)
-        
+        self.ntrans, _ = chsel.ch2tran(self.chs)
+        self.idxs = chsel.ch2idx(self.chs)
         # See whether compensation is being applied
         comp = cgs is not None
         if not comp:
             cgs = np.zeros(len(freqs))
         dds_b.alloff()
         for fOffset,fiDeg,g,cg,ch in zip(self.fOffsets, fiDegs, gs, cgs, self.chs):
-            dds_b.ddscfg(f=fOffset*1e6, fi=fiDeg, g=g, cg=cg, ch=ch, comp=comp)
+            if verbose: print("mkids.py set_tones:  fOffset, fiDeg, g, cg, ch, comp=",fOffset, fiDeg, g, cg, ch, comp)
+            dds_b.ddscfg(f=fOffset*1e6, fi=fiDeg, g=g, cg=cg, ch=ch, comp=comp, verbose=verbose)
 
     def source(self, source="product"):
         # Set source using analysis chain.
@@ -890,6 +894,32 @@ class KidsChain():
         # Get data from bin using analysis chain.
         return self.analysis.get_bin(f=f, force_dds = self.force_dds, verbose=verbose)
     
+    
+    def get_xs(self, mean=False, verbose=False, ):
+        """
+        Get the (complex) x values for all tones
+        
+                
+        Parameters:
+        -----------
+            mean:  boolean
+                calculates the mean value of all samples
+            verbose:  boolean
+                talk to me!
+            
+        """
+        dataAll = self.analysis.get_data_all(verbose)
+        xs = {}
+        samples = dataAll['samples']
+        for iTone in range(len(self.qFreqs)):
+            ntran = self.ntrans[iTone]
+            idx = self.idxs[iTone]
+            si = samples[ntran]
+            xs[iTone] = si[2*idx] + 1j*si[2*idx+1]
+            if mean:
+                xs[iTone] = xs[iTone].mean()
+        return xs
+
     def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True, doProgress=False, doPlotFirst=False):
         if set_mixer:
             # Set fmixer at the center of the sweep.

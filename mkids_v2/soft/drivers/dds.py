@@ -227,8 +227,9 @@ class AxisDdsV2(SocIp):
     def start(self):
         self.dds_sync_reg   = 0
 
-    def ddscfg(self, f=0, fi=0, g=0, ch=0, sel="dds"):
+    def ddscfg(self, f=0, fi=0, g=0, ch=0, sel="dds", verbose=False):
         # Sanity check.
+        if verbose: print("dds.py AxisDdsV2 ddscfg:  f, fi, g, ch, sel=",f,fi,g,ch,sel)
         if (ch >= 0 and ch < self.NCH_TOTAL):
             if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
                 if (fi >= self.MIN_PHI and fi < self.MAX_PHI): 
@@ -329,7 +330,8 @@ class AxisDdsV3(SocIp):
     def start(self):
         self.dds_sync_reg   = 0
 
-    def ddscfg(self, f=0, fi=0, g=0, ch=0, sel="dds"):
+    def ddscfg(self, f=0, fi=0, g=0, ch=0, sel="dds", verbose=False):
+        if verbose: print("dds.py AxisDdsV3 ddscfg:  f, fi, g, ch, sel=",f,fi,g,ch,sel)
         # Sanity check.
         if (ch >= 0 and ch < self.NCH_TOTAL):
             if (f >= -self.FS_DDS/2 and f < self.FS_DDS/2):
@@ -440,7 +442,9 @@ class AxisDdsDualV1(SocIp):
         # Set default outsel (for compatibility with DDS+CIC).
         self.sel_default = sel
 
-    def ddscfg(self, f=0, fi=0, g=0, cg=0, ch=0, comp=False):
+    def ddscfg(self, f=0, fi=0, g=0, cg=0, ch=0, comp=False, verbose=False):
+        if verbose: print("dds.py  AxisDdsDualV1 ddscfg:  f, fi, g, ch, comp=",f,fi,g,ch,comp)
+
         # Real/Imaginary part of compensation gain.
         cg_i = np.real(cg)
         cg_q = np.imag(cg)
