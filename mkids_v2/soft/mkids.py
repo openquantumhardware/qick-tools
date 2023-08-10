@@ -764,6 +764,8 @@ class KidsChain():
             # Force dds flag.
             self.force_dds = False
 
+            # Keep track of which channels are enabled
+            self.enabledChs = np.zeros(0)
             # Check Chains.
             if analysis is None and synthesis is None:
                 # Must be a dual chain.
@@ -882,6 +884,79 @@ class KidsChain():
             if verbose: print("mkids.py set_tones:  fOffset, fiDeg, g, cg, ch, comp=",fOffset, fiDeg, g, cg, ch, comp)
             dds_b.ddscfg(f=fOffset*1e6, fi=fiDeg, g=g, cg=cg, ch=ch, comp=comp, verbose=verbose)
 
+    def enable_channels(self, verbose=False):
+        """
+        Enable channels used in tones defined in set_tones.  
+
+        Parameters:
+        -----------
+            verbose:  bool
+                True to print progress to stdout
+                
+        Sets:
+        -----
+            self.enabledChs: ndarray of ints
+                Sorted list of enabled channels
+        """
+        # Do this only if there is a change in the enabled channels
+        chs = np.array(self.chs)
+        chs.sort()
+        if len(self.enabledChs) == len(chs) and (self.enabledChs==chs).all():
+            if verbose: print("mkids.py:  enabledChs and chs identical")
+        else:
+            if verbose: print("mkids.py:  set enabledChs and call chsel.alloff and chsel.set")
+            self.enabledChs = np.array(self.chs)
+            self.enabledChs.sort()
+            chsel = getattr(self.soc, self.analysis.dict['chain']['chsel'])
+            chsel.alloff()
+            for ch in self.chs:
+                if verbose: print("mkids.py enable_channels: ch =",ch)
+                chsel.set(ch, single=False, verbose=verbose)
+                
+                
+
+    def sweep_tones(self, bandwidth, nf, doProgress=True, verbose=False, mean=True, nPreTruncate=100):
+        """
+        Perform a frequency sweep of the tones set by set_tones()
+        
+                
+        Parameters:
+        -----------
+            bandwidth: double
+                nominal width of frequency scan
+            nf: int
+                number of frequency falues
+            doProgress: boolean (default=True)
+                show progress bar in a jupyter notebook
+            mean:  boolean (default=True)
+                calculates the mean value of all samples
+            verbose:  boolean (default=False)
+                talk to me!
+            
+        Returns:
+        --------
+            xs : ndarray of complex doubles
+                first index:  frequency offset value
+                second index: tone number
+                third index (if mean=False): sample number
+                
+        """
+        
+        fOffsets = get_sweep_offsets(bandwidth, nf)
+        freqs = self.qFreqs    
+        if doProgress:
+            iValues = trange(nf)
+        else:
+            iValues = range(nf)
+        xs = []
+        for i in iValues:
+            fOffset = fOffsets[i]
+            self.set_tones(freqs+fOffsets[i], self.fis, self.gs)
+            self.enable_channels(verbose)
+            xs.append(self.get_xs(mean=mean, nPreTruncate=nPreTruncate, verbose=verbose))
+        return np.array(xs)
+
+
     def source(self, source="product"):
         # Set source using analysis chain.
         self.analysis.source(source = source)
@@ -895,30 +970,36 @@ class KidsChain():
         return self.analysis.get_bin(f=f, force_dds = self.force_dds, verbose=verbose)
     
     
-    def get_xs(self, mean=False, verbose=False, ):
+    def get_xs(self, nPreTruncate=0, mean=False, verbose=False):
         """
         Get the (complex) x values for all tones
         
                 
         Parameters:
         -----------
-            mean:  boolean
+            nPreTruncate: int  (Default 0)
+                number of samples to ignore at beginning of stream
+            mean:  boolean (Default False)
                 calculates the mean value of all samples
-            verbose:  boolean
+            verbose:  boolean (Default False)
                 talk to me!
             
+        Returns:
+        --------
+            xs : list of ndarrays
+                complex values indexed by tone number
         """
         dataAll = self.analysis.get_data_all(verbose)
-        xs = {}
+        xs = []
         samples = dataAll['samples']
         for iTone in range(len(self.qFreqs)):
             ntran = self.ntrans[iTone]
             idx = self.idxs[iTone]
             si = samples[ntran]
-            xs[iTone] = si[2*idx] + 1j*si[2*idx+1]
+            xs.append(si[2*idx][nPreTruncate:] + 1j*si[2*idx+1][nPreTruncate:])
             if mean:
                 xs[iTone] = xs[iTone].mean()
-        return xs
+        return xs 
 
     def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True, doProgress=False, doPlotFirst=False):
         if set_mixer:
@@ -1573,3 +1654,23 @@ class MkidsSoc(Overlay, QickConfig):
 
         self['refclk_freq'] = get_common_freq(refclk_freqs)
 
+def get_sweep_offsets(bandwidth, nf):
+    """
+    Utility function to calculate frequency offset values.  
+    
+    Parameters:
+    -----------
+        bandwidth:  double
+            nominal range of sweep, in MHz
+                
+        nf: int
+            number of offset values
+                
+        Returns:
+        -----
+            fOffsets : ndarray of doubles
+                The frequency offset values.
+    """
+    delta = bandwidth/(nf)
+    fOffsets = - bandwidth/2 + delta/2 + np.arange(nf) * delta 
+    return fOffsets
