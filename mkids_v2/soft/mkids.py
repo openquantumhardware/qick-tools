@@ -914,7 +914,29 @@ class KidsChain():
                 chsel.set(ch, single=False, verbose=verbose)
                 
                 
+    def get_sweep_offsets(self, bandwidth, nf):
+        """
+        Utility function to calculate frequency offset values.  
 
+        Parameters:
+        -----------
+            bandwidth:  double
+                nominal range of sweep, in MHz
+
+            nf: int
+                number of offset values
+
+            Returns:
+            -----
+                fOffsets : ndarray of doubles
+                    The frequency offset values, quantized for this KidsChain
+        """
+        delta = bandwidth/(nf)
+        fOffsets = - bandwidth/2 + delta/2 + np.arange(nf) * delta 
+        fOffsets = self.fq(fOffsets)
+        return fOffsets
+
+                
     def sweep_tones(self, bandwidth, nf, doProgress=True, verbose=False, mean=True, nPreTruncate=100):
         """
         Perform a frequency sweep of the tones set by set_tones()
@@ -942,7 +964,7 @@ class KidsChain():
                 
         """
         
-        fOffsets = get_sweep_offsets(bandwidth, nf)
+        fOffsets = self.get_sweep_offsets(bandwidth, nf)
         freqs = self.qFreqs    
         if doProgress:
             iValues = trange(nf)
@@ -1654,23 +1676,3 @@ class MkidsSoc(Overlay, QickConfig):
 
         self['refclk_freq'] = get_common_freq(refclk_freqs)
 
-def get_sweep_offsets(bandwidth, nf):
-    """
-    Utility function to calculate frequency offset values.  
-    
-    Parameters:
-    -----------
-        bandwidth:  double
-            nominal range of sweep, in MHz
-                
-        nf: int
-            number of offset values
-                
-        Returns:
-        -----
-            fOffsets : ndarray of doubles
-                The frequency offset values.
-    """
-    delta = bandwidth/(nf)
-    fOffsets = - bandwidth/2 + delta/2 + np.arange(nf) * delta 
-    return fOffsets
