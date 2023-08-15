@@ -124,7 +124,6 @@ class AxisChSelPfbV2(SocIp):
         self.set(ch)
             
     def ch2tran(self,ch):
-        print("bbb")
 
         # Transaction number.
         ntran = ch//self.L
