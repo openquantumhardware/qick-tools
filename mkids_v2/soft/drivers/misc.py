@@ -12,8 +12,6 @@ class AxisChSelPfbV2(SocIp):
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
-        
-        # Generics.
         self.B      = int(description['parameters']['B'])
         self.L      = int(description['parameters']['L'])        
         self.NCH    = int(description['parameters']['NCH'])        
@@ -134,7 +132,7 @@ class AxisChSelPfbV2(SocIp):
         # Bit.
         bit = ntran%32
         
-        return ntran,addr, bit
+        return ntran, addr, bit
     
     def ch2idx(self,ch):
         return np.mod(ch,self.L)
@@ -220,7 +218,7 @@ class AxisChSelPfbV3(SocIp):
                         print("{}: masking previously enabled channels.".format(self.fullpath))
 
                 # Transaction number and bit index.
-                ntran, bit = self.ch2tran(ch)
+                ntran, addr, bit = self.ch2tran(ch)
 
                 if verbose:
                     print("{}: ch = {}, ntran = {}, bit = {}".format(self.fullpath, ch, ntran, bit))
@@ -249,11 +247,17 @@ class AxisChSelPfbV3(SocIp):
     def ch2tran(self,ch):
         # Transaction number.
         ntran = ch//self.L
+        
+        # Mask Register Address (each is 32-bit).
+        addr = ntran//32
+
+        # Mask Register Address (each is 32-bit).
+        addr = ntran//32
 
         # Bit.
         bit = ntran%32
         
-        return ntran, bit
+        return ntran, addr, bit
     
     def ch2idx(self,ch):
         return np.mod(ch,self.L)
