@@ -24,6 +24,8 @@ class Scan():
         path, filename = os.path.split(full_path)
         bitpath = str(Path(path).parent.joinpath(Path(board), firmwareName+'.bit'))
         self.soc = MkidsSoc(bitpath)
+        self.iKids = iKids
+        self.iSimu = iSimu
         self.kidsChain = KidsChain(self.soc, dual=self.soc['dual'][iKids])
         self.simuChain = SimuChain(self.soc, simu=self.soc['simu'][iSimu])
         # Set quantization.
