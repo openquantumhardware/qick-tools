@@ -873,9 +873,7 @@ class KidsChain():
         chsel = getattr(self.soc, self.analysis.dict['chain']['chsel'])
         fmix = self.synthesis.dict['mixer']['freq']
         self.chs = pfb_b.freq2ch(self.qFreqs-fmix)
-        print("in mkids.py:  self.chs =",type(self.chs),self.chs)
         self.fOffsets = self.qFreqs - fmix - pfb_b.ch2freq(self.chs)
-        print("in mkids.py:  self.fOffsets =",self.fOffsets)
         #check that chsel.ch2tran returns a 3-tuple on the ZCU216
         self.ntrans, _, _ = chsel.ch2tran(self.chs)
         self.idxs = chsel.ch2idx(self.chs)
