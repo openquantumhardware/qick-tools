@@ -357,8 +357,9 @@ class AnalysisChain():
         
         # Unmask channel.
         self.unmask(ch, verbose=verbose)
-        
-        return streamer_b.get_data(nt=1, idx = chsel_b.ch2idx(ch))
+        idx = chsel_b.ch2idx(ch)
+        if verbose: print("mkids.py AnalysisChain.get_data:  ch=%d idx=%d"%(ch,idx))
+        return streamer_b.get_data(nt=1, idx=idx)
     
     def get_data_all(self, verbose=False):
         """
@@ -872,8 +873,11 @@ class KidsChain():
         chsel = getattr(self.soc, self.analysis.dict['chain']['chsel'])
         fmix = self.synthesis.dict['mixer']['freq']
         self.chs = pfb_b.freq2ch(self.qFreqs-fmix)
+        print("in mkids.py:  self.chs =",type(self.chs),self.chs)
         self.fOffsets = self.qFreqs - fmix - pfb_b.ch2freq(self.chs)
-        self.ntrans, _ = chsel.ch2tran(self.chs)
+        print("in mkids.py:  self.fOffsets =",self.fOffsets)
+        #check that chsel.ch2tran returns a 3-tuple on the ZCU216
+        self.ntrans, _, _ = chsel.ch2tran(self.chs)
         self.idxs = chsel.ch2idx(self.chs)
         # See whether compensation is being applied
         comp = cgs is not None
