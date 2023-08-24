@@ -67,7 +67,7 @@ class Scan():
         
         Returns:
         --------
-        fMixerSet : dbl
+        fMixerSet : double
             the actual (quantized) frequency in MHz    
         """
         fMixerKids = self.kidsChain.synthesis.get_mixer_frequency()
@@ -77,14 +77,39 @@ class Scan():
 
     
     def nZoneFromFTone(self, fTone):
-            """ Return the Nyquist zone for the frequency fTone"""
+            """ 
+            Return the Nyquist zone for the frequency fTone
+            
+            Parameters:  
+            -----------           
+            fTone: double or nparray of doubles
+                tone frequncy in MHz
+                
+            Returns:
+            --------
+            fAliased: int or nparray of inyd
+                The Nyquist zone for the fTone
+            """
+            
             fn = self.fs/2
             div,mod = np.divmod(fTone,fn)
             nZone = div.astype(int) + 1
             return nZone
 
     def fAliasedFromFTone(self, fTone):
-            """ Return the aliased frequency for the frequency fTone"""
+            """ 
+            Return the aliased frequency for the frequency fTone
+            
+            Parameters:  
+            -----------            
+            fTone: double or nparray of doubles
+                tone frequency in MHz
+                
+            Returns:
+            --------
+            fAliased: double or nparray of doubles
+                The aliased frequency to generate for the fTone
+            """
             fn = self.fs/2
             nZone = self.nZoneFromFTone(fTone)
             fAliased = nZone*fn - fTone # This is for the even-numbered Nyquist zones
