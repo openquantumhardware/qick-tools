@@ -7,6 +7,9 @@ import numpy as np
 
 from tqdm.notebook import trange, tqdm
 
+from scipy.signal import welch
+from scipy.optimize import curve_fit
+
 
 class RFDC(xrfdc.RFdc):
     """
@@ -1678,3 +1681,29 @@ class MkidsSoc(Overlay, QickConfig):
 
         self['refclk_freq'] = get_common_freq(refclk_freqs)
 
+def delayFunc(fOffsets, amplitude, delay, phase):
+    xs = amplitude*np.exp(1j*((2*np.pi*fOffsets*delay) + phase))
+    return np.concatenate((np.real(xs),np.imag(xs)))
+
+def measureDelay(offsets, xs, plotFit=False):
+    f,pxx = welch(xs, fs=1.0/np.diff(offsets).mean(), nperseg=len(xs),  return_onesided=False)
+    delay0 = f[pxx.argmax()]
+    amplitude0 = np.abs(xs).mean()
+    xsDelayed = amplitude0*np.exp(1j*2*np.pi*(offsets*delay0))
+    deltaPhi = np.angle(np.exp(1j*(np.angle(xs) - np.angle(xsDelayed))))
+    phase0 = np.mean(deltaPhi)
+    p0 = 1.2*amplitude0, delay0, phase0    
+    popt, pcov = curve_fit(delayFunc, offsets, np.concatenate((np.real(xs),np.imag(xs))), p0=p0)
+    if plotFit:
+        import matplotlib.pyplot as plt
+        plt.plot(offsets, np.real(xs), '.', label="I data")
+        plt.plot(offsets, np.imag(xs), '.', label="Q data")
+        fitAmplitude, fitDelay, fitPhase = popt
+        fits = delayFunc(offsets, fitAmplitude, fitDelay, fitPhase)
+        xsFit = fits[:len(fits)//2] + 1j*fits[len(fits)//2:]
+        plt.plot(offsets, np.real(xsFit), '-', label="I fit")
+        plt.plot(offsets, np.imag(xsFit), '-', label="Q fit")
+        plt.xlabel("frequency offset (MHz)")
+        plt.ylabel("Amplitude (ADUs)")
+        plt.legend()
+    return popt,pcov
