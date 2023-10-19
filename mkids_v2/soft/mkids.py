@@ -1707,3 +1707,12 @@ def measureDelay(offsets, xs, plotFit=False):
         plt.ylabel("Amplitude (ADUs)")
         plt.legend()
     return popt,pcov
+
+
+def applyDelay(fTones, offsets, xs, delay):
+    retval = np.array(xs)
+    for iTone,fTone in enumerate(fTones): 
+        a = np.abs(retval[:,iTone])
+        phi = np.angle(retval[:,iTone])
+        retval[:,iTone] = a*np.exp(1j*(phi-2*np.pi*((delay*(fTone+offsets)))))
+    return retval
