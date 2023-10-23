@@ -1700,6 +1700,35 @@ class MkidsSoc(Overlay, QickConfig):
 
         self['refclk_freq'] = get_common_freq(refclk_freqs)
 
+
+    def getSamplingFrequencies(self, iDual):
+        """
+        For the specified iDual chain, return the two sampling frequencies in MHz.
+
+        Parameters:
+        -----------
+            iDual: int
+                Which dual chain to consider
+
+        Returns:
+        ________
+            (fsAdc, fsDac): tuple of floats
+                The two sampling frequencies, in MHz
+        """
+        if len(self['dual']) == 0:
+            raise ValueError("There is not a dual in the object %s"%self)
+        chain = self['dual'][iDual]
+        aTile = chain['analysis']['adc']['tile']
+        aCh = chain['analysis']['adc']['ch']
+        adc = aTile+aCh
+        fsAdc = self.adcs[adc]['fs']
+        sTile = chain['synthesis']['dac']['tile']
+        sCh = chain['synthesis']['dac']['ch']
+        dac = sTile+sCh
+        fsDac = self.dacs[dac]['fs']
+        return fsAdc,fsDac
+
+
 def delayFunc(fOffsets, amplitude, delay, phase):
     xs = amplitude*np.exp(1j*((2*np.pi*fOffsets*delay) + phase))
     return np.concatenate((np.real(xs),np.imag(xs)))
