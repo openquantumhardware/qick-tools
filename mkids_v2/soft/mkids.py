@@ -42,7 +42,7 @@ class RFDC(xrfdc.RFdc):
         # Check Nyquist zone.
         fs = cfg[blockid]['fs']
         if abs(f) > fs/2 and self.get_nyquist(blockid, blocktype)==2:
-            fset *= -1
+            f *= -1
 
         # Get tile and channel from id.
         tile, channel = [int(a) for a in blockid]
@@ -246,6 +246,13 @@ class AnalysisChain():
             if value==val:
                 return key
         return('Key Not Found')
+
+    def set_nyquist(self, nqz):
+            # Set Mixer with RFDC driver.
+            self.soc.rf.set_nyquist(self.dict['chain']['adc']['id'], nqz, 'adc')
+            
+            # Update local copy of frequency value.
+            self.update_settings()
     
     def source(self, source="product"):
         # Get dds block.
@@ -360,6 +367,7 @@ class AnalysisChain():
         
         # Unmask channel.
         self.unmask(ch, verbose=verbose)
+        
         idx = chsel_b.ch2idx(ch)
         if verbose: print("mkids.py AnalysisChain.get_data:  ch=%d idx=%d"%(ch,idx))
         return streamer_b.get_data(nt=1, idx=idx)
@@ -582,6 +590,13 @@ class SynthesisChain():
             
     def get_mixer_frequency(self):
         return self.soc.rf.get_mixer_freq(self.dict['chain']['dac']['id'],'dac')
+
+    def set_nyquist(self, nqz):
+            # Set Mixer with RFDC driver.
+            self.soc.rf.set_nyquist(self.dict['chain']['dac']['id'], nqz, 'dac')
+            
+            # Update local copy of frequency value.
+            self.update_settings()
         
     def return_key(self,dictionary,val):
         for key, value in dictionary.items():
@@ -606,7 +621,7 @@ class SynthesisChain():
     # Set single output.
     def set_tone(self, f=0, fi=0, g=0.99, cg=0, comp=False, verbose=False):
         # Sanity check: is frequency on allowed range?
-        fmix = self.dict['mixer']['freq']
+        fmix = abs(self.dict['mixer']['freq'])
         fs = self.dict['chain']['fs']   
                 
         if (fmix-fs/2) < f < (fmix+fs/2):
@@ -828,6 +843,10 @@ class KidsChain():
         self.analysis.set_mixer_frequency(-f) # -fmix to get upper sideband and avoid mirroring.
         self.synthesis.set_mixer_frequency(f)
 
+    def set_nyquist(self, nqz):
+        self.analysis.set_nyquist(nqz)
+        self.synthesis.set_nyquist(nqz)
+
     def set_tone(self, f=0, fi=0, g=0.5, cg=0, comp=False, verbose=False):
         # Set tone using synthesis chain.
         self.synthesis.set_tone(f=f, g=g, fi=fi, cg=cg, comp=comp, verbose=verbose)
@@ -997,7 +1016,7 @@ class KidsChain():
         return self.analysis.get_bin(f=f, force_dds = self.force_dds, verbose=verbose)
     
     
-    def get_xs(self, nPreTruncate=0, mean=False, verbose=False):
+    def get_xs(self, mean=False, verbose=False, ):
         """
         Get the (complex) x values for all tones
         
@@ -1026,7 +1045,7 @@ class KidsChain():
             xs.append(si[2*idx][nPreTruncate:] + 1j*si[2*idx+1][nPreTruncate:])
             if mean:
                 xs[iTone] = xs[iTone].mean()
-        return xs 
+        return xs
 
     def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True, doProgress=False, doPlotFirst=False):
         if set_mixer:
