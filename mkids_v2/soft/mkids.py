@@ -1016,7 +1016,7 @@ class KidsChain():
         return self.analysis.get_bin(f=f, force_dds = self.force_dds, verbose=verbose)
     
     
-    def get_xs(self, mean=False, verbose=False, ):
+    def get_xs(self, mean=False, verbose=False, nPreTruncate=0):
         """
         Get the (complex) x values for all tones
         
