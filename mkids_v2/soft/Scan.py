@@ -39,7 +39,10 @@ class Scan():
         fsSimuOut = self.soc['simu'][iSimu]['synthesis']['fs']
         fsSimuIn = self.soc['simu'][iSimu]['analysis']['fs']
         assert fsDualOut == fsDualIn ==fsSimuOut == fsSimuIn, "fs not all equal: fsDualOut=%f, fsDualIn=%f, fsSimuOut=%f, fsSimuIn=%f"%(fsDualOut, fsDualIn, fsSimuOut, fsSimuIn)
-        self.fs = fsDualOut
+        fsAdc, fsDac = self.soc.getSamplingFrequencies(self.iKids)
+        if fsAdc != fsDac:
+            raise ValueError("Scan assumes fsAdc=fsDac but fsAdc=%f fsDac=%f"%(fsAdc, fsDac))
+        self.fNyquist = fsAdc/2
 
     def set_mixer(self, fMixer):
         """ 
@@ -57,9 +60,8 @@ class Scan():
         """
         self.simuChain.set_mixer_frequency(fMixer)
         self.kidsChain.set_mixer_frequency(fMixer)
-        fMixerSet = self.get_mixer()
-        self.nZone = self.nZoneFromFTone(fMixerSet)
-        return fMixerSet
+        self.fMixer = self.get_mixer()
+        return self.fMixer
 
     def get_mixer(self):
         """
@@ -87,12 +89,11 @@ class Scan():
                 
             Returns:
             --------
-            fAliased: int or nparray of inyd
+            fAliased: int or nparray of ints
                 The Nyquist zone for the fTone
             """
             
-            fn = self.fs/2
-            div,mod = np.divmod(fTone,fn)
+            div,mod = np.divmod(fTone,self.fNyquist)
             nZone = div.astype(int) + 1
             return nZone
 
@@ -110,7 +111,7 @@ class Scan():
             fAliased: double or nparray of doubles
                 The aliased frequency to generate for the fTone
             """
-            fn = self.fs/2
+            fn = self.fNyquist
             nZone = self.nZoneFromFTone(fTone)
             fAliased = nZone*fn - fTone # This is for the even-numbered Nyquist zones
             oddInds = np.mod(nZone,2) == 1
