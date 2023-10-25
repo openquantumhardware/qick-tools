@@ -96,7 +96,7 @@ class RFDC(xrfdc.RFdc):
     def set_nyquist(self, blockid, nqz, blocktype='dac', force=False):
         # Check valid selection.
         if nqz not in [1,2]:
-            raise RuntimeError("Nyquist zone must be 1 or 2")
+            raise ValueError("Nyquist zone must be 1 or 2")
 
         # Get tile and channel from id.
         tile, channel = [int(a) for a in blockid]
@@ -844,6 +844,24 @@ class KidsChain():
         self.synthesis.set_mixer_frequency(f)
 
     def set_nyquist(self, nqz):
+        """
+        Set the mode of the ADC and DAC
+        
+        Parameters:
+        -----------
+            nqz : int
+                1 for NRZ mode, suggested for frequencies < fNyquist
+                2 for RF mode, suggested for frequencies > fNyquist
+        
+        Returns:
+        --------
+            None
+            
+        Raises:
+            ValueError
+                if nqz is not 1 or 2
+                
+        """
         self.analysis.set_nyquist(nqz)
         self.synthesis.set_nyquist(nqz)
 
@@ -1734,6 +1752,24 @@ def delayFunc(fOffsets, amplitude, delay, phase):
     return np.concatenate((np.real(xs),np.imag(xs)))
 
 def measureDelay(offsets, xs, plotFit=False):
+    """
+    Fit data to infer effective delay to be used for phase corrections.  Assume the N measurements are all in the same channel.
+    
+    Parameters:
+    -----------
+        offsets: nparray of floats
+                frequency offset of each of the N measurements
+        xs: nparray of complex
+                the N measurements of X
+        plotFit: boolean
+            True to make a plot (default False)
+
+    Returns:
+    --------
+        delay: float
+            effective delay (in microseconds)
+    
+    """
     f,pxx = welch(xs, fs=1.0/np.diff(offsets).mean(), nperseg=len(xs),  return_onesided=False)
     delay0 = f[pxx.argmax()]
     amplitude0 = np.abs(xs).mean()
@@ -1754,7 +1790,8 @@ def measureDelay(offsets, xs, plotFit=False):
         plt.xlabel("frequency offset (MHz)")
         plt.ylabel("Amplitude (ADUs)")
         plt.legend()
-    return popt,pcov
+    delay = popt[1]
+    return delay
 
 
 def applyDelay(fTones, offsets, xs, delay):
