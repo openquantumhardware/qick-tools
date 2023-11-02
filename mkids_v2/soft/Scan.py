@@ -27,6 +27,12 @@ class Scan():
         self.iKids = iKids
         self.iSimu = iSimu
         self.kidsChain = KidsChain(self.soc, dual=self.soc['dual'][iKids])
+        
+        self.kidsChain.analysis.set_decimation(2)
+        self.kidsChain.analysis.source("product")
+        
+        self.nInCh = self.kidsChain.analysis.dict['chain']['nch']
+        self.nOutCh = self.kidsChain.synthesis.dict['chain']['nch']        
         self.simuChain = SimuChain(self.soc, simu=self.soc['simu'][iSimu])
         # Set quantization.
         self.simuChain.analysis.qout(3)

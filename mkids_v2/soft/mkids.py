@@ -1013,8 +1013,13 @@ class KidsChain():
         else:
             iValues = range(nf)
         xs = []
+        if verbose:
+            print("sweep_tones:  freqs=",freqs)
+            print("sweep_tones: fOffsets=",fOffsets)
         for i in iValues:
-            fOffset = fOffsets[i]
+            if verbose:
+                print("sweep_tones:  i=%d"%i)
+                print("sweep_tones: freqs+fOffsets[i] =",freqs+fOffsets[i])
             self.set_tones(freqs+fOffsets[i], self.fis, self.gs)
             self.enable_channels(verbose)
             xs.append(self.get_xs(mean=mean, nPreTruncate=nPreTruncate, verbose=verbose))
@@ -1751,6 +1756,31 @@ def delayFunc(fOffsets, amplitude, delay, phase):
     xs = amplitude*np.exp(1j*((2*np.pi*fOffsets*delay) + phase))
     return np.concatenate((np.real(xs),np.imag(xs)))
 
+def phiUnwrap(phis, sign):
+    """
+    Unwrap phase values to prepare for fitting
+    
+    Parameters:
+    -----------
+        phis: nparray of floats
+            original phase values
+        sign: float (+1 or -1)
+            sign of the slope of phi vs. sample number
+            
+    Returns:
+    --------
+        phius: nparray of floats
+            unwrapped phase values
+            
+    """
+    retval = np.array(phis)
+    for i in range(1,len(retval)):
+        delta =  -sign*(retval[i] - retval[i-1])
+        if delta > np.pi:
+            #print("i =",i)
+            retval[i:] += sign*2*np.pi
+    return retval
+
 def measureDelay(offsets, xs, plotFit=False):
     """
     Fit data to infer effective delay to be used for phase corrections.  Assume the N measurements are all in the same channel.
@@ -1770,29 +1800,26 @@ def measureDelay(offsets, xs, plotFit=False):
             effective delay (in microseconds)
     
     """
-    f,pxx = welch(xs, fs=1.0/np.diff(offsets).mean(), nperseg=len(xs),  return_onesided=False)
-    delay0 = f[pxx.argmax()]
-    amplitude0 = np.abs(xs).mean()
-    xsDelayed = amplitude0*np.exp(1j*2*np.pi*(offsets*delay0))
-    deltaPhi = np.angle(np.exp(1j*(np.angle(xs) - np.angle(xsDelayed))))
-    phase0 = np.mean(deltaPhi)
-    p0 = 1.2*amplitude0, delay0, phase0    
-    popt, pcov = curve_fit(delayFunc, offsets, np.concatenate((np.real(xs),np.imag(xs))), p0=p0)
+    f,pxx = welch(xs, fs=1.0/np.diff(offsets).mean(), \
+                  nperseg=len(xs), return_onesided=False)
+    imax = pxx.argmax()
+    delay0 = f[imax]
+    sign = np.sign(delay0)
+    
+    phis = np.angle(xs) 
+    phisu = phiUnwrap(phis, sign)
+    par = np.polyfit(offsets, phisu, 1, full=True)
+    delay = par[0][0]/(2*np.pi)
+    phi0 = par[0][1]
+    fitValues = phi0 + 2*np.pi*delay*offsets
     if plotFit:
         import matplotlib.pyplot as plt
-        plt.plot(offsets, np.real(xs), '.', label="I data")
-        plt.plot(offsets, np.imag(xs), '.', label="Q data")
-        fitAmplitude, fitDelay, fitPhase = popt
-        fits = delayFunc(offsets, fitAmplitude, fitDelay, fitPhase)
-        xsFit = fits[:len(fits)//2] + 1j*fits[len(fits)//2:]
-        plt.plot(offsets, np.real(xsFit), '-', label="I fit")
-        plt.plot(offsets, np.imag(xsFit), '-', label="Q fit")
-        plt.xlabel("frequency offset (MHz)")
-        plt.ylabel("Amplitude (ADUs)")
-        plt.legend()
-    delay = popt[1]
-    return delay
-
+        amplitude0 = np.abs(xs).mean()
+        plt.plot(offsets, phisu-fitValues, '.')
+        plt.xlabel("frequency offset [MHz]")
+        plt.ylabel("Residual Corrected Phase [Rad]")
+        plt.title("delay=%f  amplitude=%f"%(delay,amplitude0))
+    return delay,phi0
 
 def applyDelay(fTones, offsets, xs, delay):
     retval = np.array(xs)
