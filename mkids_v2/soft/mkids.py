@@ -14,7 +14,6 @@ from scipy.optimize import curve_fit
 class RFDC(xrfdc.RFdc):
     """
     Extends the xrfdc driver.
-    Since operations on the RFdc tend to be slow (tens of ms), we cache the Nyquist zone and frequency.
     """
     bindto = ["xilinx.com:ip:usp_rf_data_converter:2.3",
               "xilinx.com:ip:usp_rf_data_converter:2.4",
@@ -978,7 +977,7 @@ class KidsChain():
         fOffsets = self.fq(fOffsets)
         return fOffsets
 
-                
+
     def sweep_tones(self, bandwidth, nf, doProgress=True, verbose=False, mean=True, nPreTruncate=100):
         """
         Perform a frequency sweep of the tones set by set_tones()
@@ -1006,7 +1005,7 @@ class KidsChain():
                 
         """
         
-        fOffsets = self.get_sweep_offsets(bandwidth, nf)
+        self.scanFOffsets = self.get_sweep_offsets(bandwidth, nf)
         freqs = self.qFreqs    
         if doProgress:
             iValues = trange(nf)
@@ -1015,17 +1014,19 @@ class KidsChain():
         xs = []
         if verbose:
             print("sweep_tones:  freqs=",freqs)
-            print("sweep_tones: fOffsets=",fOffsets)
+            print("sweep_tones: self.scanFOffsets=",self.scanFOffsets)
         for i in iValues:
             if verbose:
                 print("sweep_tones:  i=%d"%i)
-                print("sweep_tones: freqs+fOffsets[i] =",freqs+fOffsets[i])
-            self.set_tones(freqs+fOffsets[i], self.fis, self.gs)
+                print("sweep_tones: freqs+self.scanFOffsets[i] =",freqs+self.scanFOffsets[i])
+            self.set_tones(freqs+self.scanFOffsets[i], self.fis, self.gs)
             self.enable_channels(verbose)
             xs.append(self.get_xs(mean=mean, nPreTruncate=nPreTruncate, verbose=verbose))
         return np.array(xs)
 
 
+    
+    
     def source(self, source="product"):
         # Set source using analysis chain.
         self.analysis.source(source = source)

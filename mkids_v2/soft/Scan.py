@@ -9,21 +9,25 @@ class Scan():
         
         Parameters
         ----------
-        firmwareName : str
-            the name of the firmware to load, as reported by Scan.availableBitfiles()
+        firmwareName : str or MkidsSoc instance
+            the name of the firmware to load, as reported by Scan.availableBitfiles(), or previously-loaded firmware soc
             
         iKids : int, default 0
             which instance of KIDS IP to use
             
         iSimu : int, default 0
-            which instantc of SIMU IP to use
+            which instance of SIMU IP to use
         
         """
         board = getBoard()
-        full_path = os.path.realpath(__file__)
-        path, filename = os.path.split(full_path)
-        bitpath = str(Path(path).parent.joinpath(Path(board), firmwareName+'.bit'))
-        self.soc = MkidsSoc(bitpath)
+        if not isinstance(firmwareName, MkidsSoc):
+            full_path = os.path.realpath(__file__)
+            path, filename = os.path.split(full_path)
+            bitpath = str(Path(path).parent.joinpath(Path(board), firmwareName+'.bit'))
+            self.soc = MkidsSoc(bitpath)
+        else:
+            self.soc = firmwareName
+            firmwareName = os.path.splitext(os.path.split(self.soc.bitfile_name)[1])[0]
         self.iKids = iKids
         self.iSimu = iSimu
         self.kidsChain = KidsChain(self.soc, dual=self.soc['dual'][iKids])
@@ -49,6 +53,11 @@ class Scan():
         if fsAdc != fsDac:
             raise ValueError("Scan assumes fsAdc=fsDac but fsAdc=%f fsDac=%f"%(fsAdc, fsDac))
         self.fNyquist = fsAdc/2
+        
+        # Nominal delay
+        self.nominalDelay = 0
+        if firmwareName == "mkids_2x2_kidsim_v2" and board == "zcu216":
+            self.nominalDelay = -8.51 # microseconds
 
     def set_mixer(self, fMixer):
         """ 
@@ -144,6 +153,78 @@ class Scan():
         """ Return the frequency at the center of the output channels"""
         return self.kidsChain.synthesis.ch2freq(outChs)
 
+    def sweep_tones(self, freqs, fis, gs, cgs, bandwidth, nf, doProgress=True, verbose=False, mean=True, nPreTruncate=100, doApplyDelay=True, additionalDelay = 0.0, phiCenter = 0.0):
+        """
+        Perform a frequency sweep of the tones set by set_tones()
+                        
+        Parameters:
+        -----------
+            freqs:  np array of double
+                Tone frequency (MHz)
+            fis: np array of double
+                Tone phase (Radians)
+            gs: np array of double
+                Gains, in the range [0,1) but note that it is your responsibilty 
+                confirm that freqs,fis,gs do not saturate
+            cgs: np array of complex doubles
+                compensation gain, or None to not apply compensation
+
+            bandwidth: double
+                nominal width of frequency scan
+            nf: int
+                number of frequency falues
+            doProgress: boolean (default=True)
+                show progress bar in a jupyter notebook
+            verbose:  boolean (default=False)
+                talk to me!
+            mean:  boolean (default=True)
+                calculates the mean value of all samples
+            nPreTruncate: int (default=100)
+                number of samples at beginning of read to ignore
+                
+        Returns:
+        --------
+            xs : ndarray of complex doubles
+                first index:  frequency offset value
+                second index: tone number
+                third index (if mean=False): sample number
+                
+        """
+        self.kidsChain.set_tones(freqs, fis, gs, cgs, verbose)
+        xs = self.kidsChain.sweep_tones(bandwidth, nf, doProgress, verbose, mean, nPreTruncate)
+        if doApplyDelay:
+            delay = self.nominalDelay + additionalDelay
+            xs = applyDelay(freqs, self.kidsChain.scanFOffsets, xs, delay)
+        if phiCenter is not None:
+            iMid = xs.shape[0]//2
+            rotPhis = phiCenter - np.angle(xs[iMid,:])
+            xs = rotateTones(xs, rotPhis)
+        return xs
+
+def rotateTones(xs, phis):
+    """
+    Rotate each tone by phi, in place
+ 
+    Parameters:
+    -----------
+        xs: 2d nparray of complex values
+            The second index is the tone number
+        phis: 1d nparray of double
+            amount to rotate each tone (in Radians)
+            
+    Returns:
+    --------
+        None
+            The xs values are changed in place
+    
+    Raises:
+    -------
+        ValueError
+            if the second dimension of xs is not the same as the length of phi
+    
+    """
+    xs = np.abs(xs)*np.exp(1j*(np.angle(xs)+phis))
+    return xs
 
 def availableBitfiles():
     """ Return a list of firmware names available. """
