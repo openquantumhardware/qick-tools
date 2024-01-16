@@ -921,6 +921,7 @@ class KidsChain():
         if not comp:
             cgs = np.zeros(len(freqs))
         dds_b.alloff()
+        
         for fOffset,fiDeg,g,cg,ch in zip(self.fOffsets, fiDegs, gs, cgs, self.chs):
             if verbose: print("mkids.py set_tones:  fOffset, fiDeg, g, cg, ch, comp=",fOffset, fiDeg, g, cg, ch, comp)
             dds_b.ddscfg(f=fOffset*1e6, fi=fiDeg, g=g, cg=cg, ch=ch, comp=comp, verbose=verbose)
