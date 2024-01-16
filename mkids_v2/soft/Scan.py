@@ -38,6 +38,7 @@ class Scan():
         self.nInCh = self.kidsChain.analysis.dict['chain']['nch']
         self.nOutCh = self.kidsChain.synthesis.dict['chain']['nch']        
         self.simuChain = SimuChain(self.soc, simu=self.soc['simu'][iSimu])
+        self.dfChannel = self.kidsChain.analysis.dict['chain']['fc_ch']
         # Set quantization.
         self.simuChain.analysis.qout(3)
         self.simuChain.synthesis.qout(3) 
