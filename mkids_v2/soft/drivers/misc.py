@@ -603,3 +603,92 @@ class AxisKidsimV3(SocIp):
             # Write values into hardware.
             self.set_resonator_regs(config, verbose)
 
+class AxisFilterV1(SocIp):
+    bindto = ['user.org:user:axis_filter_v1:1.0']
+    REGISTERS = {'punct0_reg': 0, 
+                 'punct1_reg': 1, 
+                 'punct2_reg': 2, 
+                 'punct3_reg': 3, 
+                 'punct4_reg': 4, 
+                 'punct5_reg': 5, 
+                 'punct6_reg': 6, 
+                 'punct7_reg': 7}
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Default registers.
+        self.we_reg = 0 # Don't write.
+        
+        # Generics.
+        self.B = int(description['parameters']['B'])
+        self.L = int(description['parameters']['L'])
+        self.N = int(description['parameters']['N'])
+
+        # Dictionary to maintain enabled channels.
+        self.dict = {}
+        self.dict['channels'] = []
+        self.dict['lanes'] = [0]*self.L
+
+        # Enable all channels.
+        self.allon()
+
+    def write(self):
+        # Write registers.
+        for i,val in enumerate(self.dict['lanes']):
+            setattr(self, "punct%d_reg" % (i), np.uint32(val))
+
+    def alloff(self):
+        # all channels off.
+        self.dict['channels'] = []
+        self.dict['lanes'] = [0]*self.L
+
+        # Write registers.
+        self.write()
+
+    def allon(self):
+        # all channels on.
+        self.dict['channels'] = np.arange(self.N)
+
+        # Puncture all channels.
+        val = int(2**(self.N/self.L)-1)
+        self.dict['lanes'] = [val]*self.L
+
+        # Write registers.
+        self.write()
+
+    def set_channel(self, config, verbose = False):
+        # Sanity check.
+        if 'channel' in config.keys():
+            if (self.N <= config['channel'] < 0):
+                raise ValueError("%s: channel must be within [0,%d]" % (self.fullpath, self.N-1))
+        else:
+            raise ValueError("%s: channel must be defined" % (self.fullpath))
+
+        # Check if channel is already active.
+        if config['channel'] in self.dict['channels']:
+            if verbose:
+                print("{}: channel {} is already active.".format(self.fullpath,config['channel']))
+        else:
+            # Add channel to active list.
+            self.dict['channels'].append(config['channel'])
+
+            # Compute Lane number from PFB channel specification.
+            lane = np.mod(config['channel'], self.L)
+
+            # Filter puncuring index.
+            punct_id = int(np.floor(config['channel']/self.L))
+
+            # Update structure.
+            self.dict['lanes'][lane] = self.dict['lanes'][lane] + 2**punct_id
+
+            if verbose:
+                print('{}: channel      = {}'.format(self.__class__.__name__, config['channel']))
+                print('{}: lane         = {}'.format(self.__class__.__name__, lane))
+                print('{}: punct_id     = {}'.format(self.__class__.__name__, punct_id))
+                print('{}: punct{}_reg  = {}'.format(self.__class__.__name__, lane, self.dict['lanes'][lane]))
+
+            # Write registers.
+            self.write()
+
