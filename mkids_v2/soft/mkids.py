@@ -1320,6 +1320,172 @@ class SimuChain():
         else:
             raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
 
+class FilterChain():
+    # Constructor.
+    def __init__(self, soc, chain=None, name=""):
+        # Sanity check. Is soc the right type?
+        if isinstance(soc, MkidsSoc) == False:
+            raise RuntimeError("%s (MkidsSoc, FilterChain)" % __class__.__name__)
+        else:
+            # Soc instance.
+            self.soc = soc
+            
+            # Chain name.
+            self.name = name
+
+            # analysis/sinthesis chains to access functions.
+            self.analysis   = AnalysisChain(self.soc, chain['analysis'])
+            self.synthesis  = SynthesisChain(self.soc, chain['synthesis'])
+
+            # Activate all channels.
+            self.allon()
+
+    def set_mixer_frequency(self, f):
+        self.analysis.set_mixer_frequency(-f) # -fmix to get upper sideband and avoid mirroring.
+        self.synthesis.set_mixer_frequency(f)
+
+    def set_nyquist(self, nqz):
+        self.analysis.set_nyquist(nqz)
+        self.synthesis.set_nyquist(nqz)
+
+    def allon(self):
+        filt_b = getattr(self.soc, self.analysis.dict['chain']['filter'])
+        filt_b.allon()
+
+    def alloff(self):
+        filt_b = getattr(self.soc, self.analysis.dict['chain']['filter'])
+        filt_b.alloff()
+
+    def band(self, flow, fhigh, single = True, verbose = False):
+        # Config.
+        cfg = {}
+        cfg['freq_low'] = flow
+        cfg['freq_high'] = fhigh
+    
+        # Set band.
+        self.set_channel_range(cfg, single = single, verbose = verbose)
+
+    def bin(self, f, single = True, verbose = False):
+        # Config.
+        cfg = {}
+        cfg['freq'] = f
+
+        # Set channel.
+        self.set_channel(cfg, single = single, verbose = verbose)
+
+    def set_channel(self, cfg, single = False, verbose=False):
+        if single:
+            self.alloff()
+
+        # Get blocks.
+        pfb_b   = getattr(self.soc, self.analysis.dict['chain']['pfb'])
+        filt_b  = getattr(self.soc, self.analysis.dict['chain']['filter'])
+
+        # Sanity check: is frequency on allowed range?
+        fmix = abs(self.analysis.get_mixer_frequency())
+        fs = self.analysis.fs
+        f  = cfg['freq']
+              
+        if (fmix-fs/2) < f < (fmix+fs/2):
+            # Compute PFB channel.
+            f_ = f - fmix
+            k = pfb_b.freq2ch(f_)
+
+            # Compute channel center frequency.
+            fc_ = pfb_b.ch2freq(k)
+            fc = fc_ + fmix
+
+            # Compute fl,fh.
+            fl = fc - pfb_b.dict['freq']['fb']/2
+            fh = fc + pfb_b.dict['freq']['fb']/2
+            
+            if verbose:
+                print("{}: f = {} MHz, k = {}, fc = {} MHz, fl = {} MHz, fh = {} MHz".format(__class__.__name__, f, k, fc, fl, fh))
+
+            # Update config structure.
+            cfg['channel'] = k
+
+            # Set channel in filter block.
+            filt_b.set_channel(cfg, verbose)
+        else:
+            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+
+    def set_channel_range(self, cfg, single = False, verbose=False):
+        if single:
+            self.alloff()
+
+        # Get blocks.
+        pfb_b   = getattr(self.soc, self.analysis.dict['chain']['pfb'])
+        filt_b  = getattr(self.soc, self.analysis.dict['chain']['filter'])
+
+        # Sanity check: is frequency on allowed range?
+        fmix = abs(self.analysis.get_mixer_frequency())
+        fs = self.analysis.fs
+
+        # Get frequency range.
+        if 'freq_low' not in cfg.keys():
+            raise ValueError("%s: freq_low must be defined" % (self.__class__.__name__))
+        if 'freq_high' not in cfg.keys():
+            raise ValueError("%s: freq_high must be defined" % (self.__class__.__name__))
+
+        flow = cfg['freq_low']
+        fhigh = cfg['freq_high']
+
+        # Sanity check.
+        if flow > fhigh:
+            raise ValueError("%s: freq_low = {} MHz cannot be higher than freq_high = {} MHz" % (self.__class__.__name__,flow,fhigh))
+              
+        if (fmix-fs/2) < flow < (fmix+fs/2):
+            if (fmix-fs/2) < fhigh < (fmix+fs/2):
+                # Compute PFB channel.
+                flow_ = flow - fmix
+                klow  = pfb_b.freq2ch(flow_)
+
+                fhigh_ = fhigh - fmix
+                khigh  = pfb_b.freq2ch(fhigh_)
+
+                if verbose:
+                    print("{}: flow = {} MHz, klow = {}, fhigh = {} MHz, khigh = {}, ".format(__class__.__name__, flow, klow, fhigh, khigh))
+
+                # Check if crossing 0 channel.
+                if klow>khigh:
+                    # Enable channels [klow,N]
+                    for k in np.arange(klow,filt_b.N):
+
+                        # Update config structure.
+                        cfg['channel'] = k
+
+                        # Set channel in filter block.
+                        filt_b.set_channel(cfg, verbose)
+
+                    # Enable channels [0..khigh]
+                    for k in np.arange(0,khigh+1):
+
+                        # Update config structure.
+                        cfg['channel'] = k
+
+                        # Set channel in filter block.
+                        filt_b.set_channel(cfg, verbose)
+                    
+
+                else:
+                    # Enable channels.
+                    for k in np.arange(klow,khigh+1):
+
+                        # Update config structure.
+                        cfg['channel'] = k
+
+                        # Set channel in filter block.
+                        filt_b.set_channel(cfg, verbose)
+            else:
+                raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (fhigh,fmix-fs/2,fmix+fs/2))
+        else:
+            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (flow,fmix-fs/2,fmix+fs/2))
+
+    def bypass(self):
+        # Enable all channels.
+        self.allon()
+        
 class MkidsSoc(Overlay, QickConfig):    
 
     # Constructor.
@@ -1375,22 +1541,6 @@ class MkidsSoc(Overlay, QickConfig):
         lines = []
         lines.append("\n\tBoard: " + self['board'])
 
-        lines.append("\n\tAnalysis Chains")
-        for i, chain in enumerate(self['analysis']):
-            name = ""
-            if 'name' in chain.keys():
-                name = ", " + chain['name']
-            lines.append("\t%d:\t Analysis Chain: ADC Tile = %d, ADC Ch = %d, fs = %.3f MHz, Number of Channels = %d %s" %
-                         (i, int(chain['adc']['tile']), int(chain['adc']['ch']), chain['fs'], chain['nch'], name))
-
-        lines.append("\n\tSynthesis Chains")
-        for i, chain in enumerate(self['synthesis']):
-            name = ""
-            if 'name' in chain.keys():
-                name = ", " + chain['name']
-            lines.append("\t%d:\t Synthesis Chain: DAC Tile = %d, DAC Ch = %d, fs = %.3f MHz, Number of Channels = %d %s" %
-                         (i, int(chain['dac']['tile']), int(chain['dac']['ch']), chain['fs'], chain['nch'], name))
-
         # Dual Chains.
         if len(self['dual']) > 0:
             lines.append("\n\tDual Chains")
@@ -1400,11 +1550,15 @@ class MkidsSoc(Overlay, QickConfig):
                 name = ""
                 if 'name' in chain.keys():
                     name = chain['name']
+                adc_ = self.adcs[chain_a['adc']['id']]
+                dac_ = self.dacs[chain_s['dac']['id']]
                 lines.append("\tDual %d: %s" % (i,name))
-                lines.append("\t\tAnalysis : ADC Tile = %d, ADC Ch = %d, fs = %.3f MHz, Number of Channels = %d" %
-                            (int(chain_a['adc']['tile']), int(chain_a['adc']['ch']), chain_a['fs'], chain_a['nch']))
-                lines.append("\t\tSynthesis: DAC Tile = %d, DAC Ch = %d, fs = %.3f MHz, Number of Channels = %d\n" %
-                             (int(chain_s['dac']['tile']), int(chain_s['dac']['ch']), chain_s['fs'], chain_s['nch']))
+                lines.append("\t\tADC: %d_%d, fs = %.1f MHz, Decimation    = %d" %
+                            (224+int(chain_a['adc']['tile']), int(chain_a['adc']['ch']), adc_['fs'], adc_['decimation']))
+                lines.append("\t\tDAC: %d_%d, fs = %.1f MHz, Interpolation = %d" %
+                            (228+int(chain_s['dac']['tile']), int(chain_s['dac']['ch']), dac_['fs'], dac_['interpolation']))
+                lines.append("\t\tPFB: fs = %.1f MHz, fc = %.1f MHz, %d channels" %
+                            (chain_a['fs_ch'], chain_a['fc_ch'], chain_a['nch']))
 
         # Sim Chains.
         if len(self['simu']) > 0:
@@ -1413,42 +1567,35 @@ class MkidsSoc(Overlay, QickConfig):
                 chain_a = chain['analysis']
                 chain_s = chain['synthesis']
                 name = ""
+                adc_ = self.adcs[chain_a['adc']['id']]
+                dac_ = self.dacs[chain_s['dac']['id']]
                 if 'name' in chain.keys():
                     name = chain['name']
                 lines.append("\tSim %d: %s" % (i,name))
-                lines.append("\t\tAnalysis : ADC Tile = %d, ADC Ch = %d, fs = %.3f MHz, Number of Channels = %d" %
-                            (int(chain_a['adc']['tile']), int(chain_a['adc']['ch']), chain_a['fs'], chain_a['nch']))
-                lines.append("\t\tSynthesis: DAC Tile = %d, DAC Ch = %d, fs = %.3f MHz, Number of Channels = %d\n" %
-                             (int(chain_s['dac']['tile']), int(chain_s['dac']['ch']), chain_s['fs'], chain_s['nch']))
-
-
-        lines.append("\n\t%d ADCs:" % (len(self['adcs'])))
-        for adc in self['adcs']:
-            tile, block = [int(c) for c in adc]
-            fs = self.adcs[adc]['fs']
-            decimation = self.adcs[adc]['decimation']
-            if self['board']=='ZCU111':
-                label = "ADC%d_T%d_CH%d" % (tile + 224, tile, block)
-            elif self['board']=='ZCU216':
-                label = "%d_%d, on JHC%d" % (block, tile + 224, 5 + (block%2) + 2*(tile//2))
-            elif self['board']=='RFSoC4x2':
-                label = {'00': 'ADC_D', '01': 'ADC_C', '20': 'ADC_B', '21': 'ADC_A'}[adc]
-            lines.append("\t\tADC tile %d, ch %d, fs = %.3f MHz, decimation = %d, %s" %
-                         (tile, block, fs, decimation, label))
-
-        lines.append("\n\t%d DACs:" % (len(self['dacs'])))
-        for dac in self['dacs']:
-            tile, block = [int(c) for c in dac]
-            fs = self.dacs[dac]['fs']
-            interpolation = self.dacs[dac]['interpolation']
-            if self['board']=='ZCU111':
-                label = "DAC%d_T%d_CH%d" % (tile + 228, tile, block)
-            elif self['board']=='ZCU216':
-                label = "%d_%d, on JHC%d" % (block, tile + 228, 1 + (block%2) + 2*(tile//2))
-            elif self['board']=='RFSoC4x2':
-                label = {'00': 'DAC_B', '20': 'DAC_A'}[dac]
-            lines.append("\t\tDAC tile %d, ch %d, fs = %.3f MHz, interpolation = %d, %s" %
-                         (tile, block, fs, decimation, label))
+                lines.append("\t\tADC: %d_%d, fs = %.1f MHz, Decimation    = %d" %
+                            (224+int(chain_a['adc']['tile']), int(chain_a['adc']['ch']), adc_['fs'], adc_['decimation']))
+                lines.append("\t\tDAC: %d_%d, fs = %.1f MHz, Interpolation = %d" %
+                            (228+int(chain_s['dac']['tile']), int(chain_s['dac']['ch']), dac_['fs'], dac_['interpolation']))
+                lines.append("\t\tPFB: fs = %.1f MHz, fc = %.1f MHz, %d channels" %
+                            (chain_a['fs_ch'], chain_a['fc_ch'], chain_a['nch']))
+        # Filter Chains.
+        if len(self['filter']) > 0:
+            lines.append("\n\tFilter Chains")
+            for i, chain in enumerate(self['filter']):
+                chain_a = chain['analysis']
+                chain_s = chain['synthesis']
+                name = ""
+                adc_ = self.adcs[chain_a['adc']['id']]
+                dac_ = self.dacs[chain_s['dac']['id']]
+                if 'name' in chain.keys():
+                    name = chain['name']
+                lines.append("\tFilter %d: %s" % (i,name))
+                lines.append("\t\tADC: %d_%d, fs = %.1f MHz, Decimation    = %d" %
+                            (224+int(chain_a['adc']['tile']), int(chain_a['adc']['ch']), adc_['fs'], adc_['decimation']))
+                lines.append("\t\tDAC: %d_%d, fs = %.1f MHz, Interpolation = %d" %
+                            (228+int(chain_s['dac']['tile']), int(chain_s['dac']['ch']), dac_['fs'], dac_['interpolation']))
+                lines.append("\t\tPFB: fs = %.1f MHz, fc = %.1f MHz, %d channels" %
+                            (chain_a['fs_ch'], chain_a['fc_ch'], chain_a['nch']))
 
         return "\nQICK configuration:\n"+"\n".join(lines)
 
@@ -1538,6 +1685,7 @@ class MkidsSoc(Overlay, QickConfig):
         self['synthesis'] = []
         self['dual'] = []
         self['simu'] = []
+        self['filter'] = []
         for pfb in self.pfbs_in:
             thiscfg = {}
             thiscfg['type'] = 'analysis'
@@ -1557,6 +1705,9 @@ class MkidsSoc(Overlay, QickConfig):
             elif pfb.HAS_KIDSIM:
                 thiscfg['subtype'] = 'sim'
                 thiscfg['kidsim'] = pfb.dict['kidsim']
+            elif pfb.HAS_FILTER:
+                thiscfg['subtype'] = 'filter'
+                thiscfg['filter'] = pfb.dict['filter']
             if pfb.HAS_CHSEL:
                 thiscfg['chsel'] = pfb.dict['chsel']
             if pfb.HAS_STREAMER:
@@ -1581,6 +1732,9 @@ class MkidsSoc(Overlay, QickConfig):
             elif pfb.HAS_KIDSIM:
                 thiscfg['subtype'] = 'sim'
                 thiscfg['kidsim'] = pfb.dict['kidsim']
+            elif pfb.HAS_FILTER:
+                thiscfg['subtype'] = 'filter'
+                thiscfg['filter'] = pfb.dict['filter']
             thiscfg['dac'] = pfb.dict['dac']
             thiscfg['pfb'] = pfb.fullpath
             thiscfg['fs'] = pfb.dict['freq']['fs']
@@ -1639,6 +1793,25 @@ class MkidsSoc(Overlay, QickConfig):
                 # If not found print an error.
                 if not found:
                     raise RuntimeError("Could not find dual chain for PFB {}".format(ch_a['pfb']))
+
+            # Is it filter?
+            if ch_a['subtype'] == 'filter':
+                # Find matching chain (they share a axis_filter block).
+                found = False
+                filt = ch_a['filter']
+                for ch_s in self['synthesis']:
+                    # Is it filter?
+                    if ch_s['subtype'] == 'filter':
+                        if filt == ch_s['filter']:
+                            found = True 
+                            thiscfg = {}
+                            thiscfg['analysis']  = ch_a
+                            thiscfg['synthesis'] = ch_s
+                            self['filter'].append(thiscfg)
+                    
+                # If not found print an error.
+                if not found:
+                    raise RuntimeError("Could not find filter chain for PFB {}".format(ch_a['pfb']))
 
     def config_clocks(self, force_init_clks):
         """
