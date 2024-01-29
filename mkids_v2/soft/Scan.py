@@ -249,4 +249,35 @@ def getBoard():
     board = os.environ["BOARD"].lower().replace("208","216")
     return board
     
+def sweptTonesToSpectrum(sweptTones, fTones, scanFOffsets):
+    """
+    Reorganize results of a simulatanous sweep of N tones to frequency,X arrays
     
+    Parameters:
+    -----------
+        sweptTones: np array of complex
+            results returned from Scan.sweep_tones
+        fTones: np array of doubles
+            nominal tone frequencies (MHz)
+        scanFOffsets:
+            offset values applied to sweep
+            
+    Returns:
+    --------
+        f,x: tuple of
+            f: np array of double, frequencies (MHz)
+            X: np array of complex, I,Q values (ADUs)
+    
+    """
+    nOffset = sweptTones.shape[0]
+    nTones = sweptTones.shape[1]
+    nFreqs = nOffset*nTones
+    freqs = np.zeros(nFreqs)
+    xValues = np.zeros(nFreqs, dtype=complex)
+    i = 0
+    for iTone in range(nTones):
+        for iOffset in range(nOffset):
+            freqs[i] = fTones[iTone] + scanFOffsets[iOffset]
+            xValues[i] = sweptTones[iOffset,iTone]
+            i += 1
+    return freqs,xValues

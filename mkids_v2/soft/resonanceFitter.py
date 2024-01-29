@@ -71,9 +71,10 @@ def firstGuess(fl, iqs):
     #tl = 90+np.arctan2(xl, -yl)*180/np.pi
     #tl = np.where(tl>=0, tl, tl+360)
 
-    a= 1 # Not bad for a starting point
-    v = 1000 
-    c = 1000
+    # These are guesses that seem to work.
+    a= 0.1 
+    v = -5000 
+    c = -2
     return q,fc,a,v,c,theta,gi,gq,ic,qc
 
 def fitResonance(freqs, iqs):
@@ -107,7 +108,8 @@ def fitResonancePlot(freqs, iqs, p, iPlot):
         ax[1].plot(fitFreqs-fMid, np.angle(iqFit))
         plt.xlabel("Frequency - %.1f"%fMid)
     elif iPlot == 1: # IQ plot
-        plt.plot(np.real(iqs),np.imag(iqs),'.')
-        plt.plot(np.real(iqFit),np.imag(iqFit))
+        fig, ax = plt.subplots(1,1)
+        ax.plot(np.real(iqs),np.imag(iqs),'.')
+        ax.plot(np.real(iqFit),np.imag(iqFit))
     plt.suptitle("f0 = %f"%p[1])
 
