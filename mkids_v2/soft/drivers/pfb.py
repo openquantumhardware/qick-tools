@@ -15,6 +15,7 @@ class AbsPfbAnalysis(SocIp):
     HAS_STREAMER    = False
     HAS_DMA         = False
     HAS_KIDSIM      = False
+    HAS_FILTER      = False
 
     def configure(self, fs):
         # Channel centers.
@@ -97,6 +98,12 @@ class AbsPfbAnalysis(SocIp):
 
                 # Add kidsim into dictionary.
                 self.dict['kidsim'] = block
+                break
+            elif blocktype == "axis_filter_v1":
+                self.HAS_FILTER = True
+
+                # Add kidsim into dictionary.
+                self.dict['filter'] = block
                 break
             elif blocktype == "axis_register_slice":
                 ((block, port),) = soc.metadata.trace_bus(block, 'M_AXIS')
@@ -333,6 +340,7 @@ class AbsPfbSynthesis(SocIp):
     HAS_DDS         = False
     HAS_DDS_DUAL    = False
     HAS_KIDSIM      = False
+    HAS_FILTER      = False
 
     def configure(self, fs):
         # Channel centers.
@@ -372,6 +380,12 @@ class AbsPfbSynthesis(SocIp):
 
                 # Add dds to dictionary.
                 self.dict['kidsim'] = block
+                break
+            elif blocktype == "axis_filter_v1":
+                self.HAS_FILTER = True
+
+                # Add dds to dictionary.
+                self.dict['filter'] = block
                 break
             elif blocktype == "axis_register_slice":
                 ((block, port),) = soc.metadata.trace_bus(block, 'S_AXIS')
