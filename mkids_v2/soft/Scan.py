@@ -59,7 +59,7 @@ class Scan():
         self.nominalDelay = 0
         if firmwareName == "mkids_2x2_kidsim_v2" and board == "zcu216":
             self.nominalDelay = -8.51 # microseconds
-        elif firwareName == "mkids_v3" and board == "rfsoc4x2":
+        elif firmwareName == "mkids_v3" and board == "rfsoc4x2":
             self.nominalDelay = -4.262 # microsecionds found in demo__06_phase.ipynb
 
     def set_mixer(self, fMixer):
