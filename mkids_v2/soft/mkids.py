@@ -375,8 +375,12 @@ class AnalysisChain():
         """
         Get the data from all the enabled channels.
         """
-        # Get blocks.        
+        # Get blocks.  
+        if verbose:
+            print("mkids.py:  begin get_data_all")
         streamer_b = getattr(self.soc, self.dict['chain']['streamer'])
+        if verbose:
+            print("mkids.py:  type(streamer_b) =",type(streamer_b))
         
         # Check if any channel is enabled.
         if self.anyenabled():
@@ -898,7 +902,12 @@ class KidsChain():
             fOffsets -- dds frequency, offset from the center of the bin
             ntrans -- transfer number (used for unpacking data)
             idxs -- index number (used for unpacking data)
-                    
+             
+        Raises:
+        -------
+            ValueError
+                if the tones are not in unique channels
+        
         """
 
         # Remember the tones that are being generated
@@ -912,10 +921,17 @@ class KidsChain():
         chsel = getattr(self.soc, self.analysis.dict['chain']['chsel'])
         fmix = self.synthesis.dict['mixer']['freq']
         self.chs = pfb_b.freq2ch(self.qFreqs-fmix)
+        if len(np.unique(self.chs)) != len(self.chs):
+            raise ValueError("Tones are not in unique channels: %s"%(self.chs))
         self.fOffsets = self.qFreqs - fmix - pfb_b.ch2freq(self.chs)
         #check that chsel.ch2tran returns a 3-tuple on the ZCU216
         self.ntrans, _, _ = chsel.ch2tran(self.chs)
         self.idxs = chsel.ch2idx(self.chs)
+        if verbose:
+            print("mkids.py:  in set_tones")
+            print("   self.chs    =",self.chs)
+            print("   self.ntrans =",self.ntrans)
+            print("   self.idxs   =",self.idxs)
         # See whether compensation is being applied
         comp = cgs is not None
         if not comp:
@@ -925,6 +941,8 @@ class KidsChain():
         for fOffset,fiDeg,g,cg,ch in zip(self.fOffsets, fiDegs, gs, cgs, self.chs):
             if verbose: print("mkids.py set_tones:  fOffset, fiDeg, g, cg, ch, comp=",fOffset, fiDeg, g, cg, ch, comp)
             dds_b.ddscfg(f=fOffset*1e6, fi=fiDeg, g=g, cg=cg, ch=ch, comp=comp, verbose=verbose)
+        # Enable these tones for readout
+        self.enable_channels(verbose)
 
     def enable_channels(self, verbose=False):
         """
@@ -951,6 +969,8 @@ class KidsChain():
             self.enabledChs.sort()
             chsel = getattr(self.soc, self.analysis.dict['chain']['chsel'])
             chsel.alloff()
+            if verbose:
+                print("mkids.py enable_channels:  self.chs=",self.chs)
             for ch in self.chs:
                 if verbose: print("mkids.py enable_channels: ch =",ch)
                 chsel.set(ch, single=False, verbose=verbose)
