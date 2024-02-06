@@ -361,7 +361,12 @@ class AxisStreamerV1(SocIp):
 
     def get_data_all(self, verbose=False):
         # Get packets.
+        if verbose:
+            print("misc.py start get_data_all")
+            
         packets = self.transfer()
+        if verbose:
+            print("misc.py packets.shape =",packets.shape)
 
         # Format data.
         data = {'raw' : [], 'idx' : [], 'samples' : {}}
@@ -377,7 +382,10 @@ class AxisStreamerV1(SocIp):
         for i in unique_idx:
             idx = np.argwhere(data['idx'] == i).reshape(-1)
             data['samples'][i] = data['raw'][:,idx]
-
+        if verbose:
+            for key in data['samples']:
+                print(" data[%d].shape = %s"%(key,data['samples'][key].shape))
+ 
         return data
 
 
