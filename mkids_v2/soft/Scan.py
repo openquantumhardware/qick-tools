@@ -1,6 +1,9 @@
 from pathlib import Path
 from mkids import *
 import os
+import matplotlib.pyplot as plt
+import numpy as np
+
 class Scan():
     """ Convenience class to deal with MKIDs and Resonator firmware to set and scan tones"""
     def __init__(self, firmwareName, iKids=0, iSimu=0):
@@ -50,6 +53,7 @@ class Scan():
         fsSimuOut = self.soc['simu'][iSimu]['synthesis']['fs']
         fsSimuIn = self.soc['simu'][iSimu]['analysis']['fs']
         assert fsDualOut == fsDualIn ==fsSimuOut == fsSimuIn, "fs not all equal: fsDualOut=%f, fsDualIn=%f, fsSimuOut=%f, fsSimuIn=%f"%(fsDualOut, fsDualIn, fsSimuOut, fsSimuIn)
+        self.pfbFs = fsDualOut
         fsAdc, fsDac = self.soc.getSamplingFrequencies(self.iKids)
         if fsAdc != fsDac:
             raise ValueError("Scan assumes fsAdc=fsDac but fsAdc=%f fsDac=%f"%(fsAdc, fsDac))
@@ -156,7 +160,7 @@ class Scan():
         """ Return the frequency at the center of the output channels"""
         return self.kidsChain.synthesis.ch2freq(outChs)
 
-    def sweep_tones(self, freqs, fis, gs, cgs, bandwidth, nf, doProgress=True, verbose=False, mean=True, nPreTruncate=100, doApplyDelay=True, additionalDelay = 0.0, phiCenter = 0.0):
+    def sweep_tones(self, freqs, fis, gs, cgs, bandwidth, nf, doProgress=True, verbose=False, mean=True, nPreTruncate=100, doApplyDelay=True, additionalDelay = 0.0, phiCenter = 0.0, nRepeats=1):
         """
         Perform a frequency sweep of the tones set by set_tones()
                         
@@ -194,7 +198,7 @@ class Scan():
                 
         """
         self.kidsChain.set_tones(freqs, fis, gs, cgs, verbose)
-        xs = self.kidsChain.sweep_tones(bandwidth, nf, doProgress, verbose, mean, nPreTruncate)
+        xs = self.kidsChain.sweep_tones(bandwidth, nf, doProgress, verbose, mean, nPreTruncate, nRepeats)
         if doApplyDelay:
             delay = self.nominalDelay + additionalDelay
             xs = applyDelay(freqs, self.kidsChain.scanFOffsets, xs, delay)
@@ -204,6 +208,31 @@ class Scan():
             xs = rotateTones(xs, rotPhis)
         return xs
 
+    def getDelayForOutCh(self, outCh, df=None, N=50, doProgress=False, plotFit=False):
+        kids = self.kidsChain
+        qFMixer = self.get_mixer()
+        
+        fMinimum = qFMixer-self.pfbFs/2
+        fMaximum = qFMixer+self.pfbFs/2
+
+        fTone = self.outCh2Freq(outCh)
+        if df is None:
+            df = kids.synthesis.fc_ch
+        fMin = np.maximum(fMinimum, fTone-df/2)
+        fMax = np.minimum(fMaximum, fTone+df/2)
+        df = fMax-fMin
+        fc = (fMin+fMax)/2
+        freqs = np.array([fc])
+        fis = np.zeros(1)
+        gs = 0.9*np.ones(1)
+        kids.set_tones(freqs, fis, gs)
+        fOffsets = kids.get_sweep_offsets(df, N)
+        xs = kids.sweep_tones(df, N, mean=True, doProgress=doProgress)
+        delay,phi0 = measureDelay(fOffsets, xs[:,0], plotFit=plotFit) 
+        return delay,xs,fOffsets,fTone,phi0   
+    
+    
+    
 def rotateTones(xs, phis):
     """
     Rotate each tone by phi, in place
@@ -282,4 +311,15 @@ def sweptTonesToSpectrum(sweptTones, fTones, scanFOffsets):
             freqs[i] = fTones[iTone] + scanFOffsets[iOffset]
             xValues[i] = sweptTones[iOffset,iTone]
             i += 1
-    return freqs,xValues
+    inds = np.argsort(freqs)
+    return freqs[inds],xValues[inds]
+
+def bodePlot(f,x, supTitle=None, plotFmt='.-'):
+    fig,ax = plt.subplots(2,1,sharex=True)
+    ax[0].plot(f,np.abs(x), plotFmt)
+    ax[1].plot(f,np.angle(x), plotFmt)
+    ax[1].set_xlabel("Frequency [MHz]")
+    ax[0].set_ylabel("Amplitude (ADU)")
+    ax[1].set_ylabel("Phase (Rad)")
+    if supTitle is not None:
+        plt.suptitle(supTitle)
