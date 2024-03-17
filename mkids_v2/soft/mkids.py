@@ -999,7 +999,7 @@ class KidsChain():
         return fOffsets
 
 
-    def sweep_tones(self, bandwidth, nf, doProgress=True, verbose=False, mean=True, nPreTruncate=100):
+    def sweep_tones(self, bandwidth, nf, doProgress=True, verbose=False, mean=True, nPreTruncate=100, nRepeats=1):
         """
         Perform a frequency sweep of the tones set by set_tones()
         
@@ -1025,7 +1025,7 @@ class KidsChain():
                 third index (if mean=False): sample number
                 
         """
-        
+
         self.scanFOffsets = self.get_sweep_offsets(bandwidth, nf)
         freqs = self.qFreqs    
         if doProgress:
@@ -1042,7 +1042,15 @@ class KidsChain():
                 print("sweep_tones: freqs+self.scanFOffsets[i] =",freqs+self.scanFOffsets[i])
             self.set_tones(freqs+self.scanFOffsets[i], self.fis, self.gs)
             self.enable_channels(verbose)
-            xs.append(self.get_xs(mean=mean, nPreTruncate=nPreTruncate, verbose=verbose))
+            thisXs = None
+            for iRepeat in range(nRepeats):
+                thisRead = self.get_xs(mean=mean, nPreTruncate=nPreTruncate, verbose=verbose)
+                thisRead = np.array(thisRead)
+                if thisXs is None:
+                    thisXs = thisRead
+                else:
+                    thisXs += thisRead
+            xs.append(thisXs/nRepeats)
         return np.array(xs)
 
 
