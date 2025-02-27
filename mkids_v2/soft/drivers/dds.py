@@ -3,15 +3,7 @@ import numpy as np
 
 class AxisDdsCicV2(SocIp):
     bindto = ['user.org:user:axis_ddscic_v2:1.0']
-    REGISTERS = {'addr_nchan_reg' : 0, 
-                 'addr_pinc_reg'  : 1, 
-                 'addr_we_reg'    : 2, 
-                 'dds_sync_reg'   : 3, 
-                 'dds_outsel_reg' : 4,
-                 'cic_rst_reg'    : 5,
-                 'cic_d_reg'      : 6, 
-                 'qdata_qsel_reg' : 7}
-    
+
     # Decimation range.
     MIN_D = 1
     MAX_D = 250
@@ -31,6 +23,15 @@ class AxisDdsCicV2(SocIp):
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
+
+        self.REGISTERS = {'addr_nchan_reg' : 0, 
+                          'addr_pinc_reg'  : 1, 
+                          'addr_we_reg'    : 2, 
+                          'dds_sync_reg'   : 3, 
+                          'dds_outsel_reg' : 4,
+                          'cic_rst_reg'    : 5,
+                          'cic_d_reg'      : 6, 
+                          'qdata_qsel_reg' : 7}
         
         # Default registers.
         self.addr_nchan_reg = 0
@@ -111,9 +112,6 @@ class AxisDdsCicV2(SocIp):
         
 class AxisCicV1(SocIp):
     bindto = ['user.org:user:axis_cic_v1:1.0']
-    REGISTERS = {'cic_rst_reg'    : 0,
-                 'cic_d_reg'      : 1, 
-                 'qdata_qsel_reg' : 2}
     
     # Decimation range.
     MIN_D = 1
@@ -127,6 +125,10 @@ class AxisCicV1(SocIp):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'cic_rst_reg'    : 0,
+                          'cic_d_reg'      : 1, 
+                          'qdata_qsel_reg' : 2}
+
         # Default registers.
         self.cic_rst_reg    = 1 # Keep resetting accumulator.
         self.cic_d_reg      = 4 # Decimate-by-4.
@@ -168,13 +170,6 @@ class AxisCicV1(SocIp):
     
 class AxisDdsV2(SocIp):
     bindto = ['user.org:user:axis_dds_v2:1.0']
-    REGISTERS = {'addr_nchan_reg' : 0, 
-                 'addr_pinc_reg'  : 1, 
-                 'addr_phase_reg' : 2,
-                 'addr_gain_reg'  : 3,
-                 'addr_cfg_reg'   : 4,
-                 'addr_we_reg'    : 5,                  
-                 'dds_sync_reg'   : 6}
     
     # Sampling frequency and frequency resolution (Hz).
     FS_DDS      = 1000
@@ -197,6 +192,14 @@ class AxisDdsV2(SocIp):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'addr_nchan_reg' : 0, 
+                          'addr_pinc_reg'  : 1, 
+                          'addr_phase_reg' : 2,
+                          'addr_gain_reg'  : 3,
+                          'addr_cfg_reg'   : 4,
+                          'addr_we_reg'    : 5,                  
+                          'dds_sync_reg'   : 6}
+
         # Default registers.
         self.addr_nchan_reg = 0;
         self.addr_pinc_reg  = 0;
@@ -271,13 +274,6 @@ class AxisDdsV2(SocIp):
             
 class AxisDdsV3(SocIp):
     bindto = ['user.org:user:axis_dds_v3:1.0']
-    REGISTERS = {'addr_nchan_reg' : 0, 
-                 'addr_pinc_reg'  : 1, 
-                 'addr_phase_reg' : 2,
-                 'addr_gain_reg'  : 3,
-                 'addr_cfg_reg'   : 4,
-                 'addr_we_reg'    : 5,                  
-                 'dds_sync_reg'   : 6}
     
     # Sampling frequency and frequency resolution (Hz).
     FS_DDS      = 1000
@@ -300,6 +296,14 @@ class AxisDdsV3(SocIp):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'addr_nchan_reg' : 0, 
+                         'addr_pinc_reg'  : 1, 
+                         'addr_phase_reg' : 2,
+                         'addr_gain_reg'  : 3,
+                         'addr_cfg_reg'   : 4,
+                         'addr_we_reg'    : 5,                  
+                         'dds_sync_reg'   : 6}
+
         # Default registers.
         self.addr_nchan_reg = 0;
         self.addr_pinc_reg  = 0;
@@ -374,14 +378,6 @@ class AxisDdsV3(SocIp):
 
 class AxisDdsDualV1(SocIp):
     bindto = ['user.org:user:axis_dds_dual_v1:1.0']
-    REGISTERS = {'addr_nchan_reg'       : 0, 
-                 'addr_pinc_reg'        : 1, 
-                 'addr_phase_reg'       : 2,
-                 'addr_dds_gain_reg'    : 3,
-                 'addr_comp_gain_reg'   : 4,
-                 'addr_cfg_reg'         : 5,
-                 'addr_we_reg'          : 6,                  
-                 'dds_sync_reg'         : 7}
     
     # Sampling frequency and frequency resolution (Hz).
     FS_DDS      = 1000
@@ -404,6 +400,15 @@ class AxisDdsDualV1(SocIp):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'addr_nchan_reg'       : 0, 
+                          'addr_pinc_reg'        : 1, 
+                          'addr_phase_reg'       : 2,
+                          'addr_dds_gain_reg'    : 3,
+                          'addr_comp_gain_reg'   : 4,
+                          'addr_cfg_reg'         : 5,
+                          'addr_we_reg'          : 6,                  
+                          'dds_sync_reg'         : 7}
+
         # Default registers.
         self.addr_nchan_reg     = 0;
         self.addr_pinc_reg      = 0;

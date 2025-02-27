@@ -4,14 +4,16 @@ from qick.qick import SocIp
 
 class AxisChSelPfbV2(SocIp):
     bindto = ['user.org:user:axis_chsel_pfb_v2:1.0']
-    REGISTERS = {   'start_reg' : 0, 
-                    'addr_reg'  : 1,
-                    'data_reg'  : 2,
-                    'we_reg'    : 3}
     
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
+
+        self.REGISTERS = {'start_reg' : 0, 
+                          'addr_reg'  : 1,
+                          'data_reg'  : 2,
+                          'we_reg'    : 3}
+
         self.B      = int(description['parameters']['B'])
         self.L      = int(description['parameters']['L'])        
         self.NCH    = int(description['parameters']['NCH'])        
@@ -139,13 +141,14 @@ class AxisChSelPfbV2(SocIp):
 
 class AxisChSelPfbV3(SocIp):
     bindto = ['user.org:user:axis_chsel_pfb_v3:1.0']
-    REGISTERS = {   'start_reg' : 0, 
-                    'punct_reg' : 1}
     
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'start_reg' : 0, 
+                          'punct_reg' : 1}
+
         # Generics.
         self.B      = int(description['parameters']['B'])
         self.L      = int(description['parameters']['L'])        
@@ -270,11 +273,12 @@ class AxisStreamerV1(SocIp):
     #
     # NSAMP_REG : number of samples per transaction (for TLAST generation).
     bindto = ['user.org:user:axis_streamer_v1:1.0']
-    REGISTERS = {'start_reg' : 0, 'nsamp_reg' : 1}
     
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
+
+        self.REGISTERS = {'start_reg' : 0, 'nsamp_reg' : 1}
         
         # Default registers.
         self.start_reg = 0
@@ -411,18 +415,6 @@ class AxisStreamerV1(SocIp):
 
 class AxisKidsimV3(SocIp):
     bindto = ['user.org:user:axis_kidsim_v3:1.0']
-    REGISTERS = {'dds_bval_reg' : 0, 
-                 'dds_slope_reg': 1, 
-                 'dds_steps_reg': 2, 
-                 'dds_wait_reg' : 3, 
-                 'dds_freq_reg' : 4, 
-                 'iir_c0_reg'   : 5, 
-                 'iir_c1_reg'   : 6, 
-                 'iir_g_reg'    : 7, 
-                 'outsel_reg'   : 8, 
-                 'punct_id_reg' : 9, 
-                 'addr_reg'     : 10, 
-                 'we_reg'       : 11}
     
     # Sampling frequency and frequency resolution (Hz).
     FS_DDS = 1000
@@ -438,6 +430,19 @@ class AxisKidsimV3(SocIp):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'dds_bval_reg' : 0, 
+                          'dds_slope_reg': 1, 
+                          'dds_steps_reg': 2, 
+                          'dds_wait_reg' : 3, 
+                          'dds_freq_reg' : 4, 
+                          'iir_c0_reg'   : 5, 
+                          'iir_c1_reg'   : 6, 
+                          'iir_g_reg'    : 7, 
+                          'outsel_reg'   : 8, 
+                          'punct_id_reg' : 9, 
+                          'addr_reg'     : 10, 
+                          'we_reg'       : 11}
+
         # Default registers.
         self.we_reg = 0 # Don't write.
         
@@ -613,19 +618,20 @@ class AxisKidsimV3(SocIp):
 
 class AxisFilterV1(SocIp):
     bindto = ['user.org:user:axis_filter_v1:1.0']
-    REGISTERS = {'punct0_reg': 0, 
-                 'punct1_reg': 1, 
-                 'punct2_reg': 2, 
-                 'punct3_reg': 3, 
-                 'punct4_reg': 4, 
-                 'punct5_reg': 5, 
-                 'punct6_reg': 6, 
-                 'punct7_reg': 7}
     
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'punct0_reg': 0, 
+                          'punct1_reg': 1, 
+                          'punct2_reg': 2, 
+                          'punct3_reg': 3, 
+                          'punct4_reg': 4, 
+                          'punct5_reg': 5, 
+                          'punct6_reg': 6, 
+                          'punct7_reg': 7}
+
         # Default registers.
         self.we_reg = 0 # Don't write.
         
