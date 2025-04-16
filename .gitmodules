@@ -1,0 +1,3 @@
+[submodule "qick_fw_mkids"]
+	path = qick_fw_mkids
+	url = git@github.com:openquantumhardware/qick_fw_mkids.git
