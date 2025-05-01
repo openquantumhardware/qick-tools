@@ -300,6 +300,16 @@ class AxisStreamerV1(SocIp):
         
         # Number of total samples per transaction.
         self.NS_NI = self.NS + self.NI
+
+        # single buffer for old acquisition code
+        self.buff = None
+
+        # pair of buffers for ping-pong acquisition
+        self.buff_pingpong = None
+        self.i_pingpong = None
+        self.nbytes_pingpong = None
+        self.nsamp_pingpong = None
+        self.dummy_pingpong = None
         
     def configure(self,axi_dma):
         self.dma = axi_dma
@@ -314,6 +324,9 @@ class AxisStreamerV1(SocIp):
         # Configure parameters.
         self.nsamp_reg  = nsamp
         nbuf = nsamp*self.NS_TR
+
+        # deallocate the old buffer
+        if self.buff is not None: self.buff.freebuffer()
         self.buff = allocate(shape=(nbuf,), dtype=np.int16)
         
         # Update register value.
@@ -372,14 +385,17 @@ class AxisStreamerV1(SocIp):
         if verbose:
             print("misc.py packets.shape =",packets.shape)
 
+        return self.format_data_new(packets.reshape((-1,self.NS_NI)), verbose)
+
+    def format_data_new(self, packets, verbose=False):
         # Format data.
         data = {'raw' : [], 'idx' : [], 'samples' : {}}
 
         # Raw packets.
-        data['raw'] = packets[:,:,:self.NS].reshape((-1,self.NS)).T
+        data['raw'] = packets[:,:self.NS].reshape((-1,self.NS)).T
 
         # Active transactions.
-        data['idx']     = packets[:,:,-1].reshape(-1).astype(int)
+        data['idx']     = packets[:,-1].reshape(-1).astype(int)
 
         # Group samples per transaction index.
         unique_idx = np.unique(data['idx'])
@@ -389,11 +405,10 @@ class AxisStreamerV1(SocIp):
         if verbose:
             for key in data['samples']:
                 print(" data[%d].shape = %s"%(key,data['samples'][key].shape))
- 
         return data
 
-
     def format_data(self, data):
+        # unused?
         unique_idx = np.unique(data['idx'])
 
         for i in unique_idx:
@@ -412,6 +427,59 @@ class AxisStreamerV1(SocIp):
         indx = (self.buff >> 24) & 0xFF;
 
         return [indx,data]
+
+    def start_pingpong(self, nsamp, dummy=-9999):
+        self.nsamp_pingpong = nsamp
+        self.dummy_pingpong = dummy
+        self.nbytes_pingpong = nsamp*(self.BAXIS//8)
+
+        # prepare the DMA buffers
+        if self.buff_pingpong is None or self.buff_pingpong[0].shape[0]<nsamp:
+            # deallocate the old buffers
+            if self.buff_pingpong is not None:
+                for x in self.buff_pingpong:
+                    x.freebuffer()
+            self.buff_pingpong = [allocate(shape=(nsamp, self.BAXIS//16), dtype=np.int16) for i in range(2)]
+        else:
+            # zero out the DMA buffer, as a sanity check (so we don't see stale data)
+            for x in self.buff_pingpong:
+                np.copyto(x, self.dummy_pingpong)
+
+        # check that the DMA is ready, and reset if necessary
+        self.check_dma()
+
+        # configure and start the streamer
+        self.nsamp_reg = nsamp
+        self.stop()
+        self.start()
+
+        # start a transfer
+        self.dma.recvchannel.transfer(self.buff_pingpong[0], nbytes=self.nbytes_pingpong)
+        self.i_pingpong = 0
+
+    def check_dma(self):
+        if not self.dma.recvchannel.idle and not self.dma.recvchannel._first_transfer:
+            self.logger.warn("streamer DMA is not idle; attempting to reset")
+            self.dma.set_up_rx_channel()
+            self.logger.warn("done resetting streamer DMA")
+
+    def get_data_pingpong(self):
+        # prepare to swap buffers
+        oldbuff = self.buff_pingpong[self.i_pingpong]
+        self.i_pingpong = (self.i_pingpong+1)%2
+        newbuff = self.buff_pingpong[self.i_pingpong]
+
+        # wait for the current transfer to complete
+        self.dma.recvchannel.wait()
+
+        # start the next transfer
+        self.dma.recvchannel.transfer(newbuff, nbytes=self.nbytes_pingpong)
+
+        # grab the data
+        ret = self.format_data_new(oldbuff[:self.nbytes_pingpong,:self.NS_NI])
+        # clear the old buffer
+        np.copyto(oldbuff, self.dummy_pingpong)
+        return ret
 
 class AxisKidsimV3(SocIp):
     bindto = ['user.org:user:axis_kidsim_v3:1.0']
