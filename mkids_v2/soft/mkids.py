@@ -170,7 +170,7 @@ class AnalysisChain():
     # Constructor.
     def __init__(self, soc, chain):
         # Sanity check. Is soc the right type?
-        if isinstance(soc, MkidsSoc) == False:
+        if not isinstance(soc, MkidsSoc):
             raise RuntimeError("%s (MkidsSoc, AnalysisChain)" % __class__.__name__)
         else:
             # Soc instance.
@@ -774,7 +774,7 @@ class KidsChain():
     # Constructor.
     def __init__(self, soc, analysis=None, synthesis=None, dual=None, name=""):
         # Sanity check. Is soc the right type?
-        if isinstance(soc, MkidsSoc) == False:
+        if not isinstance(soc, MkidsSoc):
             raise RuntimeError("%s (MkidsSoc, Analysischain, SynthesisChain)" % __class__.__name__)
         else:
             # Soc instance.
@@ -920,6 +920,7 @@ class KidsChain():
         dds_b = getattr(self.soc, self.synthesis.dict['chain']['dds'])
         chsel = getattr(self.soc, self.analysis.dict['chain']['chsel'])
         fmix = self.synthesis.dict['mixer']['freq']
+        print("Mixer frequency: {} MHz".format(fmix))
         self.chs = pfb_b.freq2ch(self.qFreqs-fmix)
         if len(np.unique(self.chs)) != len(self.chs):
             raise ValueError("Tones are not in unique channels: %s"%(self.chs))
@@ -1101,6 +1102,44 @@ class KidsChain():
         return xs
 
     def sweep(self, fstart, fend, N=10, g=0.5, decimation = 2, set_mixer=True, verbose=False, showProgress=True, doProgress=False, doPlotFirst=False):
+        """
+        Make a sweep in frequency
+        
+                
+        Parameters:
+        -----------
+            fstart    : int  
+                Start frequency for the sweep
+            fend      : int
+                Stop (or end) frequency for the sweep
+            N         :  int (Default 10)
+                Length (in number of points) of the sweep
+            g         : double (Default 0.5)
+                Gain of the signal
+            decimation: int (Default 2)
+                Decimation factor to be applied in the CIC filter to the recorded signal
+            set_mixer : Boolean (Default True)
+                Whether to set the mixer frequency to the center of the sweep range or not
+            verbose   : Boolean (Default False)
+                Whether to show debugging messages or not
+            showProgress: Boolean (Default True)
+                Whether to show acquiring progress or not
+            doProgress  : Boolean (Default False)
+                Whether to show progress bar or not
+            doPlotFirst : Boolean (Default False)
+                Whether to plot or not the first frequency samples (I and Q)
+
+            
+        Returns:
+        --------
+        return fq_v,a_v,phi_v
+            fq_v  : ndarray
+                Array of frequencies in the sweep
+            a_v   : ndarray
+                Array of amplitudes in the sweep
+            phi_v : ndarray
+                Array of phases in the sweep
+        """
         if set_mixer:
             # Set fmixer at the center of the sweep.
             fmix = (fstart + fend)/2
@@ -1158,6 +1197,13 @@ class KidsChain():
             qMean = xq[i0:i1].mean()
             
             if doPlotFirst and i==0:
+                if not set_mixer:
+                    print("Mixer not set, so setting mixer to the center frequency of the sweep")
+                    # Set fmixer at the center of the sweep.
+                    fmix = (fstart + fend)/2
+                    fmix = self.fq(fmix)
+                    self.set_mixer_frequency(fmix)
+
                 import matplotlib.pyplot as plt
                 plt.plot(xi, label="I")
                 plt.plot(xq, label="Q")
