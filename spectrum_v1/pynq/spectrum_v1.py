@@ -2,6 +2,232 @@ from qick.qick import *
 import matplotlib.pyplot as plt
 import time
 
+class AxisConstantIQ(SocIp):
+    # AXIS Constant IQ registers:
+    # REAL_REG : 16-bit.
+    # IMAG_REG : 16-bit.
+    # WE_REG   : 1-bit. Update registers.
+    bindto = ['user.org:user:axis_constant_iq:1.0']
+    REGISTERS = {'real_reg':0, 'imag_reg':1, 'we_reg':2}
+        
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Default registers.
+        self.real_reg = 30000
+        self.imag_reg = 30000
+        
+        # Generics
+        self.B = int(description['parameters']['B'])
+        self.N = int(description['parameters']['N'])
+        self.MAX_V = 2**(self.B-1)-1
+        
+        # Register update.
+        self.update()
+
+    def update(self):
+        self.we_reg = 1        
+        self.we_reg = 0
+        
+    def set_iq(self,i=1,q=1):
+        # Set registers.
+        self.real_reg = int(i*self.MAX_V)
+        self.imag_reg = int(q*self.MAX_V)
+        
+        # Register update.
+        self.update()
+        
+class AxisDdsCicV3(SocIp):
+    bindto = ['user.org:user:axis_ddscic_v3:1.0']
+    REGISTERS = {'pinc_reg'     : 0, 
+                 'pinc_we_reg'  : 1, 
+                 'prodsel_reg'  : 2,
+                 'cicsel_reg'   : 3,
+                 'qprod_reg'    : 4, 
+                 'qcic_reg'     : 5, 
+                 'dec_reg'      : 6}
+    
+    # Decimation range.
+    MIN_D       = 2
+    MAX_D       = 1000
+    
+    # Quantization range for product.
+    MIN_QPROD   = 0
+    MAX_QPROD   = 16
+
+    # Quantization range for cic.
+    MIN_QCIC    = 0
+    MAX_QCIC    = 30
+    
+    # Sampling frequency and frequency resolution (Hz).
+    FS_DDS      = 1000
+    DF_DDS      = 1
+    
+    # DDS bits.
+    B_DDS       = 32
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Default registers.
+        self.pinc_reg       = 0              # DC frequency.
+        self.pinc_we_reg    = 0              # Don't write.
+        self.prodsel_reg    = 2              # By-pass DDS.
+        self.cicsel_reg     = 1              # By-pass CIC.
+        self.qprod_reg      = self.MIN_QPROD # Lower bits.
+        self.qcic_reg       = self.MIN_QCIC  # Lower bits.
+        self.dec_reg        = self.MIN_D     # Minimum decimation.
+        
+    def configure(self, fs):
+        fs_hz = fs*1000*1000
+        self.FS_DDS = fs_hz
+        self.DF_DDS = self.FS_DDS/2**self.B_DDS
+
+    def ddsfreq(self, f=0):
+        # Sanity check.
+        if (f >= 0 and f < self.FS_DDS):
+            # Compute register value.
+            ki = int(round(f/self.DF_DDS))
+            
+            # Write value into hardware.
+            self.pinc_reg       = ki
+            self.pinc_we_reg    = 1
+            self.pinc_we_reg    = 0
+        
+    def prodsel(self, sel="product"):
+        if sel == "product":
+            self.prodsel_reg = 0
+        elif sel == "dds":
+            self.prodsel_reg = 1
+        elif sel == "input":
+            self.prodsel_reg = 2
+
+    def cicsel(self, sel="yes"):
+        if sel == "yes":
+            self.cicsel_reg = 0
+        if sel == "no":
+            self.cicsel_reg = 1
+
+    def outsel(self, data="product", cic="yes"):
+        self.prodsel(data)
+        self.cicsel(cic)
+
+    def set_qprod(self, value=0):
+        # Sanity check.
+        if (value >= self.MIN_QPROD and value <= self.MAX_QPROD):
+            self.qprod_reg = value
+            
+    def get_qprod(self):
+        return self.qprod_reg            
+
+    def set_qcic(self, value=0):
+        # Sanity check.
+        if (value >= self.MIN_QCIC and value <= self.MAX_QCIC):
+            self.qcic_reg = value
+            
+    def get_qcic(self):
+        return self.qcic_reg
+            
+    def set_dec(self, value):
+        # Sanity check.
+        if (value >= self.MIN_D and value <= self.MAX_D):
+            self.dec_reg = value
+
+    def decimation(self, value):
+        # Sanity check.
+        if (value >= self.MIN_D and value <= self.MAX_D):
+            # Compute CIC output quantization.
+            qsel = np.ceil(3*np.log2(value))
+            
+            # Set values.
+            self.set_dec(value)
+            self.set_qcic(qsel)
+            
+    def get_decimation(self):
+        if self.cicsel_reg:
+            return 1
+        else:
+            return self.dec_reg
+
+class AxisWxfft65536(SocIp):
+    bindto = ['user.org:user:axis_wxfft_65536:1.0']
+    REGISTERS = {'dw_addr_reg':0, 'dw_we_reg':1}
+    
+    # Number of FFT points.
+    N = 65536
+    
+    # Number of bits.
+    B = 16
+    
+    # Window Gain.
+    Aw = 1
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        # Default registers.
+        self.dw_addr_reg    = 0
+        self.dw_we_reg      = 0 # Don't write.            
+
+    def configure(self, axi_dma):
+        # dma.
+        self.dma = axi_dma
+
+    def window(self, wtype="hanning"):
+        w = self.gen_window(wtype)
+        self.load(win=w)
+        self.Aw = len(w)/np.sum(w)
+        
+    def gen_window(self, wtype="hanning"):
+        if wtype == "hanning":
+            w = (2**(self.B-1)-1)*np.hanning(self.N)
+        elif wtype == "rect":
+            w = (2**(self.B-1)-1)*np.ones(self.N)
+            
+        return w
+
+    # Load window coefficients.
+    def load(self, win, addr=0):
+        # Check for max length.
+        if len(win) != self.N:
+            raise RuntimeError("%s: buffer length must be %d samples." %(self.__class__.__name__, self.N))
+
+        # Check for max value.
+        if np.max(win) > np.iinfo(np.int16).max or np.min(win) < np.iinfo(np.int16).min:
+            raise ValueError("window data exceeds limits of int16 datatype")
+
+        # Format data.
+        win = win.astype(np.int16)
+
+        # Define buffer for window.
+        self.buff = allocate(shape=self.N, dtype=np.int16)
+
+        np.copyto(self.buff, win)
+
+        #################
+        ### Load data ###
+        #################
+        # Enable writes.
+        self._wr_enable(addr)
+
+        # DMA data.
+        self.dma.sendchannel.transfer(self.buff)
+        self.dma.sendchannel.wait()
+
+        # Disable writes.
+        self._wr_disable()
+
+    def _wr_enable(self, addr=0):
+        self.dw_addr_reg = addr
+        self.dw_we_reg = 1
+
+    def _wr_disable(self):
+        self.dw_we_reg = 0
+
+
 class AxisPfb8x16V1(SocIp):
     bindto = ['user.org:user:axis_pfb_8x16_v1:1.0']
     REGISTERS = {   'scale_reg' : 0,
@@ -190,6 +416,35 @@ class AxisAccumulatorV6(SocIp):
 
         return samples/nsamp
 
+class Mixer:    
+    # rf
+    rf = 0
+    
+    def __init__(self, ip):        
+        # Get Mixer Object.
+        self.rf = ip
+    
+    def set_freq(self,f,tile,dac):
+        # Make a copy of mixer settings.
+        dac_mixer = self.rf.dac_tiles[tile].blocks[dac].MixerSettings        
+        new_mixcfg = dac_mixer.copy()
+
+        # Update the copy
+        new_mixcfg.update({
+            'EventSource': xrfdc.EVNT_SRC_IMMEDIATE,
+            'Freq' : f,
+            'MixerType': xrfdc.MIXER_TYPE_FINE,
+            'PhaseOffset' : 0})
+
+        # Update settings.                
+        self.rf.dac_tiles[tile].blocks[dac].MixerSettings = new_mixcfg
+        self.rf.dac_tiles[tile].blocks[dac].UpdateEvent(xrfdc.EVENT_MIXER)
+       
+    def set_nyquist(self,nz,tile,dac):
+        dac_tile = self.rf.dac_tiles[tile]
+        dac_block = dac_tile.blocks[dac]
+        dac_block.NyquistZone = nz        
+
 class AxisChSelPfbx1(SocIp):
     # AXIS Channel Selection PFB Registers
     # CHID_REG
@@ -283,272 +538,17 @@ class AxisBuffer(SocIp):
         # Transfer data.
         return self.transfer()    
 
-class AxisDdsCicV3(SocIp):
-    bindto = ['user.org:user:axis_ddscic_v3:1.0']
-    REGISTERS = {'pinc_reg'     : 0, 
-                 'pinc_we_reg'  : 1, 
-                 'prodsel_reg'  : 2,
-                 'cicsel_reg'   : 3,
-                 'qprod_reg'    : 4, 
-                 'qcic_reg'     : 5, 
-                 'dec_reg'      : 6}
-    
-    # Decimation range.
-    MIN_D       = 2
-    MAX_D       = 1000
-    
-    # Quantization range for product.
-    MIN_QPROD   = 0
-    MAX_QPROD   = 16
-
-    # Quantization range for cic.
-    MIN_QCIC    = 0
-    MAX_QCIC    = 30
-    
-    # Sampling frequency and frequency resolution (Hz).
-    FS_DDS      = 1000
-    DF_DDS      = 1
-    
-    # DDS bits.
-    B_DDS       = 32
-    
-    def __init__(self, description):
-        # Initialize ip
-        super().__init__(description)
-        
-        # Default registers.
-        self.pinc_reg       = 0              # DC frequency.
-        self.pinc_we_reg    = 0              # Don't write.
-        self.prodsel_reg    = 2              # By-pass DDS.
-        self.cicsel_reg     = 1              # By-pass CIC.
-        self.qprod_reg      = self.MIN_QPROD # Lower bits.
-        self.qcic_reg       = self.MIN_QCIC  # Lower bits.
-        self.dec_reg        = self.MIN_D     # Minimum decimation.
-        
-    def configure(self, fs):
-        fs_hz = fs*1000*1000
-        self.FS_DDS = fs_hz
-        self.DF_DDS = self.FS_DDS/2**self.B_DDS
-
-    def ddsfreq(self, f=0):
-        # Sanity check.
-        if (f >= 0 and f < self.FS_DDS):
-            # Compute register value.
-            ki = int(round(f/self.DF_DDS))
-            
-            # Write value into hardware.
-            self.pinc_reg       = ki
-            self.pinc_we_reg    = 1
-            self.pinc_we_reg    = 0
-        
-    def prodsel(self, sel="product"):
-        if sel == "product":
-            self.prodsel_reg = 0
-        elif sel == "dds":
-            self.prodsel_reg = 1
-        elif sel == "input":
-            self.prodsel_reg = 2
-
-    def cicsel(self, sel="yes"):
-        if sel == "yes":
-            self.cicsel_reg = 0
-        if sel == "no":
-            self.cicsel_reg = 1
-
-    def outsel(self, data="product", cic="yes"):
-        self.prodsel(data)
-        self.cicsel(cic)
-
-    def set_qprod(self, value=0):
-        # Sanity check.
-        if (value >= self.MIN_QPROD and value <= self.MAX_QPROD):
-            self.qprod_reg = value
-            
-    def get_qprod(self):
-        return self.qprod_reg            
-
-    def set_qcic(self, value=0):
-        # Sanity check.
-        if (value >= self.MIN_QCIC and value <= self.MAX_QCIC):
-            self.qcic_reg = value
-            
-    def get_qcic(self):
-        return self.qcic_reg
-            
-    def set_dec(self, value):
-        # Sanity check.
-        if (value >= self.MIN_D and value <= self.MAX_D):
-            self.dec_reg = value
-
-    def decimation(self, value):
-        # Sanity check.
-        if (value >= self.MIN_D and value <= self.MAX_D):
-            # Compute CIC output quantization.
-            qsel = np.ceil(3*np.log2(value))
-            
-            # Set values.
-            self.set_dec(value)
-            self.set_qcic(qsel)
-            
-    def get_decimation(self):
-        if self.cicsel_reg:
-            return 1
-        else:
-            return self.dec_reg
-
-class AxisWxfft65536(SocIp):
-    bindto = ['user.org:user:axis_wxfft_65536:1.0']
-    REGISTERS = {   'dw_addr_reg'   : 0, 
-                    'dw_we_reg'     : 1}
-    
-    # Number of FFT points.
-    N = 65536
-    
-    # Number of bits.
-    B = 16
-    
-    # Window Gain.
-    Aw = 1
-    
-    def __init__(self, description):
-        # Initialize ip
-        super().__init__(description)
-        
-        # Default registers.
-        self.dw_addr_reg    = 0
-        self.dw_we_reg      = 0 # Don't write.
-
-        # Define buffer for window.
-        self.buff = allocate(shape=self.N, dtype=np.int16)
-
-    def configure(self, axi_dma):
-        # dma.
-        self.dma = axi_dma
-
-    def window(self, wtype="hanning"):
-        w = self.gen_window(wtype)
-        self.load(win=w)
-        self.Aw = len(w)/np.sum(w)
-        
-    def gen_window(self, wtype="hanning"):
-        if wtype == "hanning":
-            w = (2**(self.B-1)-1)*np.hanning(self.N)
-        elif wtype == "rect":
-            w = (2**(self.B-1)-1)*np.ones(self.N)
-            
-        return w
-
-    # Load window coefficients.
-    def load(self, win, addr=0):
-        # Check for max length.
-        if len(win) != self.N:
-            raise RuntimeError("%s: buffer length must be %d samples." %(self.__class__.__name__, self.N))
-
-        # Check for max value.
-        if np.max(win) > np.iinfo(np.int16).max or np.min(win) < np.iinfo(np.int16).min:
-            raise ValueError("window data exceeds limits of int16 datatype")
-
-        # Format data.
-        win = win.astype(np.int16)
-        np.copyto(self.buff, win)
-
-        #################
-        ### Load data ###
-        #################
-        # Enable writes.
-        self._wr_enable(addr)
-
-        # DMA data.
-        self.dma.sendchannel.transfer(self.buff)
-        self.dma.sendchannel.wait()
-
-        # Disable writes.
-        self._wr_disable()
-
-    def _wr_enable(self, addr=0):
-        self.dw_addr_reg = addr
-        self.dw_we_reg = 1
-
-    def _wr_disable(self):
-        self.dw_we_reg = 0
-
-class AxisConstantIQ(SocIp):
-    # AXIS Constant IQ registers:
-    # REAL_REG : 16-bit.
-    # IMAG_REG : 16-bit.
-    # WE_REG   : 1-bit. Update registers.
-    bindto = ['user.org:user:axis_constant_iq:1.0']
-    REGISTERS = {   'real_reg'  :0, 
-                    'imag_reg'  :1, 
-                    'we_reg'    :2}
-    
-    def __init__(self, description):
-        # Initialize ip
-        super().__init__(description)
-
-        # Generics.
-        self.B = int(description['parameters']['B'])
-        self.N = int(description['parameters']['N'])
-        self.MAX_V = 2**(self.B-1)-1
-        
-        # Default registers.
-        self.real_reg = 30000
-        self.imag_reg = 30000
-        
-        # Register update.
-        self.update()
-
-    def update(self):
-        self.we_reg = 1
-        self.we_reg = 0
-        
-    def set_iq(self,i=1,q=1):
-        # Set registers.
-        self.real_reg = int(i*self.MAX_V)
-        self.imag_reg = int(q*self.MAX_V)
-        
-        # Register update.
-        self.update()
-        
-class Mixer:    
-    # rf
-    rf = 0
-    
-    def __init__(self, ip):        
-        # Get Mixer Object.
-        self.rf = ip
-    
-    def set_freq(self,f,tile,dac):
-        # Make a copy of mixer settings.
-        dac_mixer = self.rf.dac_tiles[tile].blocks[dac].MixerSettings        
-        new_mixcfg = dac_mixer.copy()
-
-        # Update the copy
-        new_mixcfg.update({
-            'EventSource': xrfdc.EVNT_SRC_IMMEDIATE,
-            'Freq' : f,
-            'MixerType': xrfdc.MIXER_TYPE_FINE,
-            'PhaseOffset' : 0})
-
-        # Update settings.                
-        self.rf.dac_tiles[tile].blocks[dac].MixerSettings = new_mixcfg
-        self.rf.dac_tiles[tile].blocks[dac].UpdateEvent(xrfdc.EVENT_MIXER)
-       
-    def set_nyquist(self,nz,tile,dac):
-        dac_tile = self.rf.dac_tiles[tile]
-        dac_block = dac_tile.blocks[dac]
-        dac_block.NyquistZone = nz        
 
 class TopSoc(Overlay):    
     # Constructor.
-    def __init__(self, bitfile=None, force_init_clks=False, ignore_version=True,  **kwargs):
+    def __init__(self, bitfile=None, force_init_clks=False,ignore_version=True, **kwargs):
         # Load overlay (don't download to PL).
         Overlay.__init__(self, bitfile, ignore_version=ignore_version, download=False, **kwargs)
         
         # Configuration dictionary.
         self.cfg = {}
-        self.cfg['board'] = os.environ["BOARD"]
-        self.cfg['refclk_freq'] = 409.6        
+        self.cfg['board'] = os.environ["BOARD"]        
+        self.cfg['refclk_freq'] = 409.6
 
         # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
         self.list_rf_blocks(self.ip_dict['usp_rf_data_converter_0']['parameters'])
@@ -559,7 +559,7 @@ class TopSoc(Overlay):
             self.download()
         else:
             self.download()        
-        
+
         #################
         ### ADC Chain ###
         #################
