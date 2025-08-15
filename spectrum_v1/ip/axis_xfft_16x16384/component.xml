@@ -95,7 +95,7 @@
       <spirit:parameters>
         <spirit:parameter>
           <spirit:name>POLARITY</spirit:name>
-          <spirit:value spirit:id="BUSIFPARAM_VALUE.ARESETN.POLARITY" spirit:choiceRef="choice_list_74b5137e">ACTIVE_LOW</spirit:value>
+          <spirit:value spirit:id="BUSIFPARAM_VALUE.ARESETN.POLARITY" spirit:choiceRef="choice_list_9d8b0d81">ACTIVE_LOW</spirit:value>
         </spirit:parameter>
       </spirit:parameters>
     </spirit:busInterface>
@@ -143,7 +143,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>d22bf899</spirit:value>
+            <spirit:value>5bd14da0</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -162,7 +162,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>d22bf899</spirit:value>
+            <spirit:value>5bd14da0</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -318,7 +318,7 @@
   </spirit:model>
   <spirit:choices>
     <spirit:choice>
-      <spirit:name>choice_list_74b5137e</spirit:name>
+      <spirit:name>choice_list_9d8b0d81</spirit:name>
       <spirit:enumeration>ACTIVE_HIGH</spirit:enumeration>
       <spirit:enumeration>ACTIVE_LOW</spirit:enumeration>
     </spirit:choice>
@@ -329,7 +329,7 @@
       <spirit:file>
         <spirit:name>src/xfft_0/xfft_0.xci</spirit:name>
         <spirit:userFileType>xci</spirit:userFileType>
-        <spirit:userFileType>CELL_NAME_GEN_xfft[0].fft_i/xfft_0</spirit:userFileType>
+        <spirit:userFileType>CELL_NAME_GEN_xfft[0].fft_i</spirit:userFileType>
       </spirit:file>
       <spirit:file>
         <spirit:name>src/ctrl.sv</spirit:name>
@@ -356,7 +356,7 @@
       <spirit:file>
         <spirit:name>src/xfft_0/xfft_0.xci</spirit:name>
         <spirit:userFileType>xci</spirit:userFileType>
-        <spirit:userFileType>CELL_NAME_GEN_xfft[0].fft_i/xfft_0</spirit:userFileType>
+        <spirit:userFileType>CELL_NAME_GEN_xfft[0].fft_i</spirit:userFileType>
       </spirit:file>
       <spirit:file>
         <spirit:name>src/ctrl.sv</spirit:name>
@@ -403,12 +403,13 @@
         <xilinx:taxonomy>/UserIP</xilinx:taxonomy>
       </xilinx:taxonomies>
       <xilinx:displayName>AXIS XFFT, 16 x 16384</xilinx:displayName>
+      <xilinx:autoFamilySupportLevel>level_1</xilinx:autoFamilySupportLevel>
       <xilinx:definitionSource>package_project</xilinx:definitionSource>
       <xilinx:xpmLibraries>
         <xilinx:xpmLibrary>XPM_MEMORY</xilinx:xpmLibrary>
       </xilinx:xpmLibraries>
-      <xilinx:coreRevision>2</xilinx:coreRevision>
-      <xilinx:coreCreationDateTime>2022-09-07T19:11:26Z</xilinx:coreCreationDateTime>
+      <xilinx:coreRevision>3</xilinx:coreRevision>
+      <xilinx:coreCreationDateTime>2025-08-15T20:45:09Z</xilinx:coreCreationDateTime>
       <xilinx:tags>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@33c0ec84_ARCHIVE_LOCATION">/home/lstefana/v20.2/ip/axis_xfft_16x16384</xilinx:tag>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@5d9f29fc_ARCHIVE_LOCATION">/home/lstefana/v20.2/ip/axis_xfft_16x16384</xilinx:tag>
@@ -422,9 +423,9 @@
       </xilinx:tags>
     </xilinx:coreExtensions>
     <xilinx:packagingInfo>
-      <xilinx:xilinxVersion>2020.2</xilinx:xilinxVersion>
-      <xilinx:checksum xilinx:scope="busInterfaces" xilinx:value="97f4f968"/>
-      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="640607c9"/>
+      <xilinx:xilinxVersion>2023.1</xilinx:xilinxVersion>
+      <xilinx:checksum xilinx:scope="busInterfaces" xilinx:value="f7b13e33"/>
+      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="435655f8"/>
       <xilinx:checksum xilinx:scope="ports" xilinx:value="99f12f11"/>
       <xilinx:checksum xilinx:scope="parameters" xilinx:value="d2b4eaf6"/>
     </xilinx:packagingInfo>

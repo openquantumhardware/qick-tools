@@ -389,7 +389,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>39b8a38c</spirit:value>
+            <spirit:value>99cd1431</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -408,7 +408,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>39b8a38c</spirit:value>
+            <spirit:value>99cd1431</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -950,7 +950,7 @@
       <spirit:file>
         <spirit:name>src/xfft_0/xfft_0.xci</spirit:name>
         <spirit:userFileType>xci</spirit:userFileType>
-        <spirit:userFileType>CELL_NAME_fft_i/fft_i/xfft_0</spirit:userFileType>
+        <spirit:userFileType>CELL_NAME_fft_i/fft_i</spirit:userFileType>
       </spirit:file>
       <spirit:file>
         <spirit:name>src/bram_dp.v</spirit:name>
@@ -1005,7 +1005,7 @@
       <spirit:file>
         <spirit:name>src/xfft_0/xfft_0.xci</spirit:name>
         <spirit:userFileType>xci</spirit:userFileType>
-        <spirit:userFileType>CELL_NAME_fft_i/fft_i/xfft_0</spirit:userFileType>
+        <spirit:userFileType>CELL_NAME_fft_i/fft_i</spirit:userFileType>
       </spirit:file>
       <spirit:file>
         <spirit:name>src/bram_dp.v</spirit:name>
@@ -1080,12 +1080,13 @@
         <xilinx:taxonomy>/UserIP</xilinx:taxonomy>
       </xilinx:taxonomies>
       <xilinx:displayName>AXIS WXFFT-65536 V1</xilinx:displayName>
+      <xilinx:autoFamilySupportLevel>level_1</xilinx:autoFamilySupportLevel>
       <xilinx:definitionSource>package_project</xilinx:definitionSource>
       <xilinx:xpmLibraries>
         <xilinx:xpmLibrary>XPM_MEMORY</xilinx:xpmLibrary>
       </xilinx:xpmLibraries>
-      <xilinx:coreRevision>4</xilinx:coreRevision>
-      <xilinx:coreCreationDateTime>2022-09-08T20:14:27Z</xilinx:coreCreationDateTime>
+      <xilinx:coreRevision>5</xilinx:coreRevision>
+      <xilinx:coreCreationDateTime>2025-08-15T20:43:57Z</xilinx:coreCreationDateTime>
       <xilinx:tags>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@18b51848_ARCHIVE_LOCATION">/home/lstefana/v20.2/zcu111/fft_low_avg/ip/axis_wxfft_65536</xilinx:tag>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@46958ed_ARCHIVE_LOCATION">/home/lstefana/v20.2/zcu111/fft_low_avg/ip/axis_wxfft_65536</xilinx:tag>
@@ -1119,10 +1120,10 @@
       </xilinx:tags>
     </xilinx:coreExtensions>
     <xilinx:packagingInfo>
-      <xilinx:xilinxVersion>2020.2</xilinx:xilinxVersion>
+      <xilinx:xilinxVersion>2023.1</xilinx:xilinxVersion>
       <xilinx:checksum xilinx:scope="busInterfaces" xilinx:value="2ef8b365"/>
       <xilinx:checksum xilinx:scope="memoryMaps" xilinx:value="769c350d"/>
-      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="78aaea0c"/>
+      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="39d165aa"/>
       <xilinx:checksum xilinx:scope="ports" xilinx:value="0650fb6e"/>
       <xilinx:checksum xilinx:scope="parameters" xilinx:value="e8ef5bac"/>
     </xilinx:packagingInfo>
