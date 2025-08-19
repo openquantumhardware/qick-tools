@@ -13,15 +13,17 @@ class AxisConstantIQ(SocIp):
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
+
+        # Generics.
+        # Dictionary.
+        self.dict = {}
+        self.dict['B'] = int(description['parameters']['B'])
+        self.dict['N'] = int(description['parameters']['N'])
+        self.MAX_V = 2**(self.dict['B']-1)-1
         
         # Default registers.
         self.real_reg = 30000
         self.imag_reg = 30000
-        
-        # Generics
-        self.B = int(description['parameters']['B'])
-        self.N = int(description['parameters']['N'])
-        self.MAX_V = 2**(self.B-1)-1
         
         # Register update.
         self.update()
@@ -642,7 +644,7 @@ class TopSoc(Overlay):
         This re-implements that functionality.
         """
 
-        hs_adc = rf_config['C_High_Speed_ADC']=='1'
+        self.hs_adc = rf_config['C_High_Speed_ADC'] == '1'
 
         self.dac_tiles = []
         self.adc_tiles = []
@@ -653,43 +655,46 @@ class TopSoc(Overlay):
         self.adcs = {}
 
         for iTile in range(4):
-            if rf_config['C_DAC%d_Enable'%(iTile)]!='1':
+            if rf_config['C_DAC%d_Enable' % (iTile)] != '1':
                 continue
             self.dac_tiles.append(iTile)
-            f_fabric = float(rf_config['C_DAC%d_Fabric_Freq'%(iTile)])
-            f_refclk = float(rf_config['C_DAC%d_Refclk_Freq'%(iTile)])
+            f_fabric = float(rf_config['C_DAC%d_Fabric_Freq' % (iTile)])
+            f_refclk = float(rf_config['C_DAC%d_Refclk_Freq' % (iTile)])
             dac_fabric_freqs.append(f_fabric)
             refclk_freqs.append(f_refclk)
-            fs = float(rf_config['C_DAC%d_Sampling_Rate'%(iTile)])*1000
+            fs = float(rf_config['C_DAC%d_Sampling_Rate' % (iTile)])*1000
+            interpolation = int(rf_config['C_DAC%d_Interpolation' % (iTile)])
             for iBlock in range(4):
-                if rf_config['C_DAC_Slice%d%d_Enable'%(iTile,iBlock)]!='true':
+                if rf_config['C_DAC_Slice%d%d_Enable' % (iTile, iBlock)] != 'true':
                     continue
-                self.dacs["%d%d"%(iTile,iBlock)] = {'fs':fs,
-                                                    'f_fabric':f_fabric,
-                                                    'tile':iTile,
-                                                    'block':iBlock}
+                self.dacs["%d%d" % (iTile, iBlock)] = {'fs': fs,
+                                                       'f_fabric': f_fabric,
+                                                       'interpolation' : interpolation,
+                                                       'tile': iTile,
+                                                       'block':iBlock}
 
         for iTile in range(4):
-            if rf_config['C_ADC%d_Enable'%(iTile)]!='1':
+            if rf_config['C_ADC%d_Enable' % (iTile)] != '1':
                 continue
             self.adc_tiles.append(iTile)
-            f_fabric = float(rf_config['C_ADC%d_Fabric_Freq'%(iTile)])
-            f_refclk = float(rf_config['C_ADC%d_Refclk_Freq'%(iTile)])
+            f_fabric = float(rf_config['C_ADC%d_Fabric_Freq' % (iTile)])
+            f_refclk = float(rf_config['C_ADC%d_Refclk_Freq' % (iTile)])
             adc_fabric_freqs.append(f_fabric)
             refclk_freqs.append(f_refclk)
-            fs = float(rf_config['C_ADC%d_Sampling_Rate'%(iTile)])*1000
-            #for iBlock,block in enumerate(tile.blocks):
+            fs = float(rf_config['C_ADC%d_Sampling_Rate' % (iTile)])*1000
+            decimation = int(rf_config['C_ADC%d_Decimation' % (iTile)])
             for iBlock in range(4):
-                if hs_adc:
-                    if iBlock>=2 or rf_config['C_ADC_Slice%d%d_Enable'%(iTile,2*iBlock)]!='true':
+                if self.hs_adc:
+                    if iBlock >= 2 or rf_config['C_ADC_Slice%d%d_Enable' % (iTile, 2*iBlock)] != 'true':
                         continue
                 else:
-                    if rf_config['C_ADC_Slice%d%d_Enable'%(iTile,iBlock)]!='true':
+                    if rf_config['C_ADC_Slice%d%d_Enable' % (iTile, iBlock)] != 'true':
                         continue
-                self.adcs["%d%d"%(iTile,iBlock)] = {'fs':fs,
-                                                    'f_fabric':f_fabric,
-                                                    'tile':iTile,
-                                                    'block':iBlock}
+                self.adcs["%d%d" % (iTile, iBlock)] = {'fs': fs,
+                                                       'f_fabric': f_fabric,
+                                                       'decimation' : decimation,
+                                                       'tile': iTile,
+                                                       'block': iBlock}
 
     def set_all_clks(self):
         """
