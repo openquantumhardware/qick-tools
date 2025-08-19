@@ -27,7 +27,7 @@ class AxisConstantIQ(SocIp):
         self.update()
 
     def update(self):
-        self.we_reg = 1        
+        self.we_reg = 1
         self.we_reg = 0
         
     def set_iq(self,i=1,q=1):
@@ -226,7 +226,6 @@ class AxisWxfft65536(SocIp):
 
     def _wr_disable(self):
         self.dw_we_reg = 0
-
 
 class AxisPfb8x16V1(SocIp):
     bindto = ['user.org:user:axis_pfb_8x16_v1:1.0']
@@ -446,8 +445,11 @@ class Mixer:
         dac_block.NyquistZone = nz        
 
 class AxisChSelPfbx1(SocIp):
-    # AXIS Channel Selection PFB Registers
-    # CHID_REG
+    """
+     AXIS Channel Selection PFB Registers
+     CHID_REG
+
+    """
     bindto = ['user.org:user:axis_chsel_pfb_x1:1.0']
     REGISTERS = {'chid_reg' : 0}
     
@@ -491,8 +493,8 @@ class AxisBuffer(SocIp):
         self.N = int(description['parameters']['N'])
         self.BUFFER_LENGTH = (1 << self.N)
         
-    def configure(self,axi_dma):
-        self.dma = axi_dma
+    def configure(self,dma):
+        self.dma = dma
     
     def capture(self):
         # Enable capture
@@ -537,7 +539,6 @@ class AxisBuffer(SocIp):
         
         # Transfer data.
         return self.transfer()    
-
 
 class TopSoc(Overlay):    
     # Constructor.
