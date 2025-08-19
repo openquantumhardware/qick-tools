@@ -259,7 +259,6 @@ proc create_root_design { parentCell } {
   set_property -dict [list \
     CONFIG.AXIS_IN_DW {64} \
     CONFIG.AXIS_OUT_DW {128} \
-   CONFIG.FFT_AW {14} \
     CONFIG.FFT_STORE {1} \
     CONFIG.IQ_FORMAT {1} \
     CONFIG.MEM_DW {72} \
