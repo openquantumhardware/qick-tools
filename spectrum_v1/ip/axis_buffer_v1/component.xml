@@ -2,7 +2,7 @@
 <spirit:component xmlns:xilinx="http://www.xilinx.com" xmlns:spirit="http://www.spiritconsortium.org/XMLSchema/SPIRIT/1685-2009" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <spirit:vendor>user.org</spirit:vendor>
   <spirit:library>user</spirit:library>
-  <spirit:name>axis_buffer</spirit:name>
+  <spirit:name>axis_buffer_v1</spirit:name>
   <spirit:version>1.0</spirit:version>
   <spirit:busInterfaces>
     <spirit:busInterface>
@@ -1155,14 +1155,14 @@
     <spirit:fileSet>
       <spirit:name>xilinx_xpgui_view_fileset</spirit:name>
       <spirit:file>
-        <spirit:name>xgui/axis_buffer_v1_0.tcl</spirit:name>
+        <spirit:name>xgui/axis_buffer_v1_v1_0.tcl</spirit:name>
         <spirit:fileType>tclSource</spirit:fileType>
         <spirit:userFileType>CHECKSUM_c6a8f6ce</spirit:userFileType>
         <spirit:userFileType>XGUI_VERSION_2</spirit:userFileType>
       </spirit:file>
     </spirit:fileSet>
   </spirit:fileSets>
-  <spirit:description>AXIS Buffer IP with Paremeter for Bits and Depth.</spirit:description>
+  <spirit:description>AXIS Buffer IP with Paremeter for Bits and Depth, V1.</spirit:description>
   <spirit:parameters>
     <spirit:parameter>
       <spirit:name>N</spirit:name>
@@ -1208,10 +1208,13 @@
       <xilinx:taxonomies>
         <xilinx:taxonomy>/UserIP</xilinx:taxonomy>
       </xilinx:taxonomies>
-      <xilinx:displayName>AXIS Buffer</xilinx:displayName>
+      <xilinx:displayName>AXIS Buffer V1</xilinx:displayName>
       <xilinx:definitionSource>package_project</xilinx:definitionSource>
-      <xilinx:coreRevision>5</xilinx:coreRevision>
-      <xilinx:coreCreationDateTime>2021-03-19T19:47:48Z</xilinx:coreCreationDateTime>
+      <xilinx:coreRevision>1</xilinx:coreRevision>
+      <xilinx:upgrades>
+        <xilinx:canUpgradeFrom>user.org:user:axis_buffer:1.0</xilinx:canUpgradeFrom>
+      </xilinx:upgrades>
+      <xilinx:coreCreationDateTime>2023-08-30T19:31:38Z</xilinx:coreCreationDateTime>
       <xilinx:tags>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@5b1184c0_ARCHIVE_LOCATION">/home/lstefana/v19.1/ip/axis_buffer</xilinx:tag>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@7f54d2fc_ARCHIVE_LOCATION">/home/lstefana/v19.1/ip/axis_buffer</xilinx:tag>
@@ -1250,7 +1253,7 @@
       </xilinx:tags>
     </xilinx:coreExtensions>
     <xilinx:packagingInfo>
-      <xilinx:xilinxVersion>2019.1</xilinx:xilinxVersion>
+      <xilinx:xilinxVersion>2022.1</xilinx:xilinxVersion>
       <xilinx:checksum xilinx:scope="busInterfaces" xilinx:value="ecc2cac0"/>
       <xilinx:checksum xilinx:scope="memoryMaps" xilinx:value="919191d5"/>
       <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="e617a603"/>
