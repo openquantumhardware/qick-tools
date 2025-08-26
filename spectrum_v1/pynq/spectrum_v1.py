@@ -1,46 +1,294 @@
 from qick.qick import *
-from helpers import *
-import numpy as np
+import matplotlib.pyplot as plt
 import time
 
-class AxisConstantIQ(SocIp):
-    # AXIS Constant IQ registers:
-    # REAL_REG : 16-bit.
-    # IMAG_REG : 16-bit.
-    # WE_REG   : 1-bit. Update registers.
-    bindto = ['user.org:user:axis_constant_iq:1.0']
+class AxisPfb8x16V1(SocIp):
+    bindto = ['user.org:user:axis_pfb_8x16_v1:1.0']
+    
+    # Generic parameters.
+    N = 16
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        self.REGISTERS = { 'scale_reg' : 0,
+                           'qout_reg'  : 1}
+        # Default registers.
+        self.scale_reg  = 0
+        self.qout_reg   = 0
+
+    def configure(self, fs):
+        # Sampling frequency at input.
+        self.fs = fs
+
+        # Channel centers.
+        self.fc = fs/self.N
+
+        # Channel bandwidth.
+        self.fb = fs/(self.N/2)
+
+    def get_fs(self):
+        return self.fs
+
+    def get_fc(self):
+        return self.fc
+
+    def get_fb(self):
+        return self.fb
+        
+    def qout(self, qout):
+        self.qout_reg = qout
+        
+    def freq2ch(self, f):
+        if (0 < f < self.fs):
+            k = round(f/self.fc)
+
+            return int(np.mod(k+self.N/2,self.N))
+        else:
+            print('f must be within [0,{}] range'.format(self.fs))
+            return 0
+
+    def ch2freq(self, k):     
+        if k >= self.N/2:
+            return k*self.fc - self.fs/2
+        else:
+            return k*self.fc + self.fs/2
+          
+class AxisAccumulatorV6(SocIp):
+    bindto = ['user.org:user:axis_accumulator_v1:1.0']
         
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
-
-        self.REGISTERS = {'real_reg':0, 'imag_reg':1, 'we_reg':2}
-        # Generics.
-        # Dictionary.
-        self.dict = {}
-        self.dict['B'] = int(description['parameters']['B'])
-        self.dict['N'] = int(description['parameters']['N'])
-        self.MAX_V = 2**(self.dict['B']-1)-1
         
+        self.REGISTERS = { 'process_reg'           :0, 
+                           'tx_and_cnt_reg'        :1, 
+                           'tx_and_rst_reg'        :2, 
+                           'usr_round_samples_reg' :3, 
+                           'usr_epoch_rounds_reg'  :4, 
+                           'debug_reg'             :12, 
+                           'round_cnt_reg'         :13, 
+                           'epoch_cnt_reg'         :14, 
+                           'transmitting_reg'      :15}
         # Default registers.
-        self.real_reg = 30000
-        self.imag_reg = 30000
+        self.process_reg            = 0
+        self.tx_and_cnt_reg         = 0
+        self.tx_and_rst_reg         = 0
+        self.usr_round_samples_reg  = 100
+        self.usr_epoch_rounds_reg   = 1
         
-        # Register update.
-        self.update()
+        # Generics
+        self.AXIS_IN_DW     = int(description['parameters']['AXIS_IN_DW'])
+        self.AXIS_OUT_DW    = int(description['parameters']['AXIS_OUT_DW'])
+        self.FFT_AW         = int(description['parameters']['FFT_AW'])
+        self.BANK_ARRAY_AW  = int(description['parameters']['BANK_ARRAY_AW'])
+        self.MEM_DW         = int(description['parameters']['MEM_DW'])
+        self.MEM_PIPE       = int(description['parameters']['MEM_PIPE'])
+        self.FFT_STORE      = int(description['parameters']['FFT_STORE'])
+        self.IQ_FORMAT      = int(description['parameters']['IQ_FORMAT'])
 
-    def update(self):
-        self.we_reg = 1
-        self.we_reg = 0
+        # Check Parameters.
+        if (self.AXIS_IN_DW != 64):
+            raise ValueError('Data Width=%d not supported. Must be 64-bit'%self.AXIS_IN_DW)
+
+        # 16 inputs.
+        if (self.BANK_ARRAY_AW == 4):
+            # FFT Length.
+            if (self.FFT_AW != 14):
+                raise ValueError('FFT length=%d not supported. Must be 16384'%2**(self.FFT_AW))
+
+            # Store half the bins.
+            if (self.FFT_STORE != 1):
+                raise ValueError('FFT_STORE must be set to half (1)')
+
+            # IQ Format.
+            if (self.IQ_FORMAT != 1):
+                raise ValueError('IQ_FORMAT must be set QIQIQIQI (1)')            
+
+            # Buffer length:
+            # * Half the FFT Bins x Number of inputs.
+            # * One more for metadata.
+            # NOTE: each sample is 128 bits.
+            self.BUFFER_LENGTH = 2**(self.FFT_AW-1) * 2**self.BANK_ARRAY_AW + 1
+            print("pasamos FFT 16k")
+
+
+        # 1 input.
+        elif (self.BANK_ARRAY_AW == 0):
+            # FFT Length.
+            if (self.FFT_AW != 16):
+                raise ValueError('FFT length=%d not supported. Must be 65536'%2**(self.FFT_AW))
+
+            # Store all bins.
+            if (self.FFT_STORE != 0):
+                raise ValueError('FFT_STORE must be set to all (0)')
+
+            # Buffer length:
+            # * FFT Bins x 1.
+            # * One more for metadata.
+            # NOTE: each sample is 128 bits.
+            self.BUFFER_LENGTH = 2**self.FFT_AW + 1
+            print("pasamos FFT 64k")
+            
+        else:
+            raise ValueError('Number of parallel input=%d not supported. Must be 1 or 16'%2**(self.BANK_ARRAY_AW))
+
+        # Define buffer:         
+        self.buff = allocate(shape=(self.BUFFER_LENGTH,2), dtype=np.int64)
+
+        # FFT Length.
+        self.FFT_N = 2**self.FFT_AW
+
+    def configure(self, dma):
+        self.dma = dma
+
+    def start(self):
+        self.process_reg = 1
+
+    def stop(self):
+        self.process_reg = 0
+
+    def single_shot(self,N=1):
+        # Set number of averages.
+        self.setavg(N)
         
-    def set_iq(self,i=1,q=1):
-        # Set registers.
-        self.real_reg = int(i*self.MAX_V)
-        self.imag_reg = int(q*self.MAX_V)
+        # Start.
+        self.start()
         
-        # Register update.
-        self.update()
+        # Wait until average is done.
+        while not self.transmitting():
+            time.sleep(0.1)
         
+        # Stop block.
+        self.stop()
+        
+        # Transfer data.
+        return self.transfer()
+
+    def setavg(self, N = 100):
+        self.usr_round_samples_reg  = N
+
+    def transmitting(self):
+        return self.transmitting_reg
+
+    def transfer(self):
+        # DMA data.
+        self.dma.recvchannel.transfer(self.buff)
+        self.dma.recvchannel.wait()
+        
+        # Format data:
+        # First dimension: Lower 64 bits.
+        # Second dimension: Upper 64 bts.
+        # Last sample: Meta Data.
+        s_low = self.buff[:-1,0]
+        s_low = s_low.astype(np.float64)
+        s_high = self.buff[:-1,1]
+        s_high = s_high.astype(np.float64)
+        samples = s_low + (2**64 * s_high).astype(np.float64)
+        meta0   = self.buff[-1,0]
+        meta1   = self.buff[-1,1]
+        nsamp = meta0 >> np.int64(32)
+
+        return samples/nsamp
+
+class AxisChSelPfbx1(SocIp):
+    """
+     AXIS Channel Selection PFB Registers
+     CHID_REG
+
+    """
+    bindto = ['user.org:user:axis_chsel_pfb_x1:1.0']
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+
+        self.REGISTERS = {'chid_reg' : 0}
+        # Generics.
+        self.B = int(description['parameters']['B'])
+        self.N = int(description['parameters']['N'])
+
+        # Default registers.
+        self.set()
+        print("pasamos chsel...")
+
+    def set(self,ch=0):
+        # Change channel
+        self.chid_reg = ch         
+
+class AxisBuffer(SocIp):
+    # AXIS_buffer registers.
+    # DW_CAPTURE_REG
+    # * 0 : disable capture.
+    # * 1 : enable capture.
+    #
+    # DR_START_REG
+    # * 0 : start reader.
+    # * 1 : stop reader.
+    bindto = ['user.org:user:axis_buffer_v1:1.0']
+    
+    def __init__(self, description):
+        # Initialize ip
+        super().__init__(description)
+        
+        self.REGISTERS = {'dw_capture' : 0, 'dr_start' : 1}
+        # Default registers.
+        self.dw_capture = 0
+        self.dr_start = 0
+        
+        # Generics.
+        self.B = int(description['parameters']['B'])
+        self.N = int(description['parameters']['N'])
+        self.BUFFER_LENGTH = (1 << self.N)
+        
+    def configure(self,axi_dma):
+        self.dma = axi_dma
+    
+    def capture(self):
+        # Enable capture
+        self.dw_capture = 1
+        
+        # Wait for capture
+        time.sleep(0.1)
+        
+        # Stop capture
+        self.dw_capture = 0
+        
+    def transfer(self):
+        self.dr_start = 0
+        
+        buff = allocate(shape=(self.BUFFER_LENGTH,), dtype=np.uint32)
+
+        # Start transfer.
+        self.dr_start = 1
+
+        # DMA data.
+        self.dma.recvchannel.transfer(buff)
+        self.dma.recvchannel.wait()
+
+        # Stop transfer.
+        self.dr_start = 0
+        
+        # Return data
+        # Format:
+        # -> lower 16 bits: I value.
+        # -> higher 16 bits: Q value.
+        data = buff
+        dataI = data & 0xFFFF
+        dataI = dataI.astype(np.int16)
+        dataQ = data >> 16
+        dataQ = dataQ.astype(np.int16)
+
+        return dataI,dataQ
+    
+    def get_data(self):
+        # Capture data.
+        self.capture()
+        
+        # Transfer data.
+        return self.transfer()    
+
 class AxisDdsCicV3(SocIp):
     bindto = ['user.org:user:axis_ddscic_v3:1.0']
     
@@ -66,7 +314,7 @@ class AxisDdsCicV3(SocIp):
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
-        
+
         self.REGISTERS = {'pinc_reg'     : 0, 
                           'pinc_we_reg'  : 1, 
                           'prodsel_reg'  : 2,
@@ -74,6 +322,7 @@ class AxisDdsCicV3(SocIp):
                           'qprod_reg'    : 4, 
                           'qcic_reg'     : 5, 
                           'dec_reg'      : 6}
+        
         # Default registers.
         self.pinc_reg       = 0              # DC frequency.
         self.pinc_we_reg    = 0              # Don't write.
@@ -170,10 +419,14 @@ class AxisWxfft65536(SocIp):
         # Initialize ip
         super().__init__(description)
         
-        self.REGISTERS = {'dw_addr_reg':0, 'dw_we_reg':1}
+        self.REGISTERS = {'dw_addr_reg'   : 0, 
+                          'dw_we_reg'     : 1}
         # Default registers.
         self.dw_addr_reg    = 0
-        self.dw_we_reg      = 0 # Don't write.            
+        self.dw_we_reg      = 0 # Don't write.
+
+        # Define buffer for window.
+        self.buff = allocate(shape=self.N, dtype=np.int16)
 
     def configure(self, axi_dma):
         # dma.
@@ -204,10 +457,6 @@ class AxisWxfft65536(SocIp):
 
         # Format data.
         win = win.astype(np.int16)
-
-        # Define buffer for window.
-        self.buff = allocate(shape=self.N, dtype=np.int16)
-
         np.copyto(self.buff, win)
 
         #################
@@ -230,196 +479,44 @@ class AxisWxfft65536(SocIp):
     def _wr_disable(self):
         self.dw_we_reg = 0
 
-class AxisPfb8x16V1(SocIp):
-    bindto = ['user.org:user:axis_pfb_8x16_v1:1.0', 'QICK:QICK:axis_pfb_8x16_v1:1.0']
-    
-    # Generic parameters.
-    N = 16
+class AxisConstantIQ(SocIp):
+    # AXIS Constant IQ registers:
+    # REAL_REG : 16-bit.
+    # IMAG_REG : 16-bit.
+    # WE_REG   : 1-bit. Update registers.
+    bindto = ['user.org:user:axis_constant_iq:1.0']
     
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
+
+        self.REGISTERS = {'real_reg'  :0, 
+                          'imag_reg'  :1, 
+                          'we_reg'    :2}
+        # Generics.
+        self.B = int(description['parameters']['B'])
+        self.N = int(description['parameters']['N'])
+        self.MAX_V = 2**(self.B-1)-1
         
-        self.REGISTERS = { 'scale_reg' : 0,
-                           'qout_reg'  : 1}
         # Default registers.
-        self.scale_reg  = 0
-        self.qout_reg   = 0
-
-    def configure(self, fs):
-        # Sampling frequency at input.
-        self.fs = fs
-
-        # Channel centers.
-        self.fc = fs/self.N
-
-        # Channel bandwidth.
-        self.fb = fs/(self.N/2)
-
-    def get_fs(self):
-        return self.fs
-
-    def get_fc(self):
-        return self.fc
-
-    def get_fb(self):
-        return self.fb
+        self.real_reg = 30000
+        self.imag_reg = 30000
         
-    def qout(self, qout):
-        self.qout_reg = qout
+        # Register update.
+        self.update()
+
+    def update(self):
+        self.we_reg = 1
+        self.we_reg = 0
         
-    def freq2ch(self, f):
-        if (0 < f < self.fs):
-            k = round(f/self.fc)
-
-            return int(np.mod(k+self.N/2,self.N))
-        else:
-            print('f must be within [0,{}] range'.format(self.fs))
-            return 0
-
-    def ch2freq(self, k):     
-        if k >= self.N/2:
-            return k*self.fc - self.fs/2
-        else:
-            return k*self.fc + self.fs/2
-          
-class AxisAccumulatorV6(SocIp):
-    bindto = ['user.org:user:axis_accumulator:1.0']
+    def set_iq(self,i=1,q=1):
+        # Set registers.
+        self.real_reg = int(i*self.MAX_V)
+        self.imag_reg = int(q*self.MAX_V)
         
-    def __init__(self, description):
-        # Initialize ip
-        super().__init__(description)
+        # Register update.
+        self.update()
         
-        self.REGISTERS = { 'process_reg'           :0, 
-                           'tx_and_cnt_reg'        :1, 
-                           'tx_and_rst_reg'        :2, 
-                           'usr_round_samples_reg' :3, 
-                           'usr_epoch_rounds_reg'  :4, 
-                           'debug_reg'             :12, 
-                           'round_cnt_reg'         :13, 
-                           'epoch_cnt_reg'         :14, 
-                           'transmitting_reg'      :15}
-        # Default registers.
-        self.process_reg            = 0
-        self.tx_and_cnt_reg         = 0
-        self.tx_and_rst_reg         = 0
-        self.usr_round_samples_reg  = 100
-        self.usr_epoch_rounds_reg   = 1
-        
-        # Generics
-        self.AXIS_IN_DW     = int(description['parameters']['AXIS_IN_DW'])
-        self.AXIS_OUT_DW    = int(description['parameters']['AXIS_OUT_DW'])
-        self.FFT_AW         = int(description['parameters']['FFT_AW'])
-        self.BANK_ARRAY_AW  = int(description['parameters']['BANK_ARRAY_AW'])
-        self.MEM_DW         = int(description['parameters']['MEM_DW'])
-        self.MEM_PIPE       = int(description['parameters']['MEM_PIPE'])
-        self.FFT_STORE      = int(description['parameters']['FFT_STORE'])
-        self.IQ_FORMAT      = int(description['parameters']['IQ_FORMAT'])
-
-        # Check Parameters.
-        if (self.AXIS_IN_DW != 64):
-            raise ValueError('Data Width=%d not supported. Must be 64-bit'%self.AXIS_IN_DW)
-
-        # 16 inputs.
-        if (self.BANK_ARRAY_AW == 4):
-            # FFT Length.
-            if (self.FFT_AW != 14):
-                raise ValueError('FFT length=%d not supported. Must be 16384'%2**(self.FFT_AW))
-
-            # Store half the bins.
-            if (self.FFT_STORE != 1):
-                raise ValueError('FFT_STORE must be set to half (1)')
-
-            # IQ Format.
-            if (self.IQ_FORMAT != 1):
-                raise ValueError('IQ_FORMAT must be set QIQIQIQI (1)')            
-
-            # Buffer length:
-            # * Half the FFT Bins x Number of inputs.
-            # * One more for metadata.
-            # NOTE: each sample is 128 bits.
-            self.BUFFER_LENGTH = 2**(self.FFT_AW-1) * 2**self.BANK_ARRAY_AW + 1
-            print("pasamos FFT 16k")
-
-
-        # 1 input.
-        elif (self.BANK_ARRAY_AW == 0):
-            # FFT Length.
-            if (self.FFT_AW != 16):
-                raise ValueError('FFT length=%d not supported. Must be 65536'%2**(self.FFT_AW))
-
-            # Store all bins.
-            if (self.FFT_STORE != 0):
-                raise ValueError('FFT_STORE must be set to all (0)')
-
-            # Buffer length:
-            # * FFT Bins x 1.
-            # * One more for metadata.
-            # NOTE: each sample is 128 bits.
-            self.BUFFER_LENGTH = 2**self.FFT_AW + 1
-            print("pasamos FFT 64k")
-            
-        else:
-            raise ValueError('Number of parallel input=%d not supported. Must be 1 or 16'%2**(self.BANK_ARRAY_AW))
-
-        # Define buffer:         
-        self.buff = allocate(shape=(self.BUFFER_LENGTH,2), dtype=np.int64)
-
-#        # FFT Length.
-#        self.FFT_N = 2**self.FFT_AW
-#
-    def configure(self, dma):
-        self.dma = dma
-
-    def start(self):
-        self.process_reg = 1
-
-    def stop(self):
-        self.process_reg = 0
-
-    def single_shot(self,N=1):
-        # Set number of averages.
-        self.setavg(N)
-        
-        # Start.
-        self.start()
-        
-        # Wait until average is done.
-        while not self.transmitting():
-            time.sleep(0.1)
-        
-        # Stop block.
-        self.stop()
-        
-        # Transfer data.
-        return self.transfer()
-
-    def setavg(self, N = 100):
-        self.usr_round_samples_reg  = N
-
-    def transmitting(self):
-        return self.transmitting_reg
-
-    def transfer(self):
-        # DMA data.
-        self.dma.recvchannel.transfer(self.buff)
-        self.dma.recvchannel.wait()
-        
-        # Format data:
-        # First dimension: Lower 64 bits.
-        # Second dimension: Upper 64 bts.
-        # Last sample: Meta Data.
-        s_low = self.buff[:-1,0]
-        s_low = s_low.astype(np.float64)
-        s_high = self.buff[:-1,1]
-        s_high = s_high.astype(np.float64)
-        samples = s_low + (2**64 * s_high).astype(np.float64)
-        meta0   = self.buff[-1,0]
-        meta1   = self.buff[-1,1]
-        nsamp = meta0 >> np.int64(32)
-
-        return samples/nsamp
-
 class Mixer:    
     # rf
     rf = 0
@@ -449,262 +546,39 @@ class Mixer:
         dac_block = dac_tile.blocks[dac]
         dac_block.NyquistZone = nz        
 
-class AxisChSelPfbx1(SocIp):
-    """
-     AXIS Channel Selection PFB Registers
-     CHID_REG
-
-    """
-    bindto = ['user.org:user:axis_chsel_pfb_x1:1.0']
-    
-    def __init__(self, description):
-        # Initialize ip
-        super().__init__(description)
-
-        self.REGISTERS = {'chid_reg' : 0}
-        # Generics.
-        self.B = int(description['parameters']['B'])
-        self.N = int(description['parameters']['N'])
-
-        # Default registers.
-        self.set()
-        print("pasamos chsel...")
-
-    def set(self,ch=0):
-        # Change channel
-        self.chid_reg = ch         
-
-class AxisBuffer(SocIp):
-    # AXIS_buffer registers.
-    # DW_CAPTURE_REG
-    # * 0 : disable capture.
-    # * 1 : enable capture.
-    #
-    # DR_START_REG
-    # * 0 : start reader.
-    # * 1 : stop reader.
-    bindto = ['user.org:user:axis_buffer:1.0']
-    
-    def __init__(self, description):
-        # Initialize ip
-        super().__init__(description)
-        
-        self.REGISTERS = {'dw_capture' : 0, 'dr_start' : 1}
-        # Default registers.
-        self.dw_capture = 0
-        self.dr_start = 0
-        
-        # Generics.
-        self.B = int(description['parameters']['B'])
-        self.N = int(description['parameters']['N'])
-        self.BUFFER_LENGTH = (1 << self.N)
-        
-    def configure(self,dma):
-        self.dma = dma
-    
-    def capture(self):
-        # Enable capture
-        self.dw_capture = 1
-        
-        # Wait for capture
-        time.sleep(0.1)
-        
-        # Stop capture
-        self.dw_capture = 0
-        
-    def transfer(self):
-        self.dr_start = 0
-        
-        buff = allocate(shape=(self.BUFFER_LENGTH,), dtype=np.uint32)
-
-        # Start transfer.
-        self.dr_start = 1
-
-        # DMA data.
-        self.dma.recvchannel.transfer(buff)
-        self.dma.recvchannel.wait()
-
-        # Stop transfer.
-        self.dr_start = 0
-        
-        # Return data
-        # Format:
-        # -> lower 16 bits: I value.
-        # -> higher 16 bits: Q value.
-        data = buff
-        dataI = data & 0xFFFF
-        dataI = dataI.astype(np.int16)
-        dataQ = data >> 16
-        dataQ = dataQ.astype(np.int16)
-
-        return dataI,dataQ
-    
-    def get_data(self):
-        # Capture data.
-        self.capture()
-        
-        # Transfer data.
-        return self.transfer()    
-
-class TopSoc(Overlay, QickConfig):    
-
+class TopSoc(Overlay):    
     # Constructor.
-    def __init__(self, bitfile, force_init_clks=False, ignore_version=True, **kwargs):
-        """
-        Constructor method
-        """
-
-        self.external_clk = False
-        self.clk_output = False
-
-        # Load bitstream.
+    def __init__(self, bitfile=None, force_init_clks=False, ignore_version=True,  **kwargs):
+        # Load overlay (don't download to PL).
         Overlay.__init__(self, bitfile, ignore_version=ignore_version, download=False, **kwargs)
-
-        # Initialize the configuration
-        self._cfg = {}
-        QickConfig.__init__(self)
-
-        self['board'] = os.environ["BOARD"]
+        
+        # Configuration dictionary.
+        self.cfg = {}
+        self.cfg['board'] = os.environ["BOARD"]
+        self.cfg['refclk_freq'] = 409.6        
 
         # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
         self.list_rf_blocks(self.ip_dict['usp_rf_data_converter_0']['parameters'])
-
-        self.config_clocks(force_init_clks)
-
-        # RF data converter (for configuring ADCs and DACs, and setting NCOs)
-        self.rf = self.usp_rf_data_converter_0
-        self.rf.configure(self)
-
-        # Extract the IP connectivity information from the HWH parser and metadata.
-        self.metadata = QickMetadata(self)
-
-        self.map_signal_paths()
-
-    def description(self):
-        """Generate a printable description of the QICK configuration.
-
-        Parameters
-        ----------
-
-        Returns
-        -------
-        str
-            description
-
-        """
-        lines = []
-        lines.append("\n\tBoard: " + self['board'])
-
-        # Analysis Chains.
-        if len(self['analysis']) > 0:
-            for i, chain in enumerate(self['analysis']):
-                adc_ = self.adcs[chain['adc']['id']]
-                lines.append("\tAnalysis %d:" % (i))
-                lines.append("\t\tADC: %d_%d, fs = %.1f MHz, Decimation    = %d" %
-                             (224+int(chain['adc']['tile']), int(chain['adc']['ch']), adc_['fs'], adc_['decimation']))
-                lines.append("\t\tPFB: fs = %.1f MHz, fc = %.1f MHz, %d channels" %
-                             (chain['fs_ch'], chain['fc_ch'], chain['nch']))
-                #lines.append("\t\tXFFT
-        return "\nSPECTRUM configuration:\n"+"\n".join(lines)
-
-#    def map_signal_paths(self):
-#        # Use the HWH parser to trace connectivity and deduce the channel numbering.
-#        for key, val in self.ip_dict.items():
-#            if hasattr(val['driver'], 'configure_connections'):
-#                getattr(self, key).configure_connections(self)
-#
-#        # PFB for Analysis.
-#        self.pfbs_in = []
-#        pfbs_in_drivers = set([AxisPfbAnalysis])
-#
-#        # IQ Constants.
-#        self.iqs = []
-#        iqs_drivers = set([AxisConstantIQ])
-#
-#        # Populate the lists with the registered IP blocks.
-#        for key, val in self.ip_dict.items():
-#            if val['driver'] in pfbs_in_drivers:
-#                self.pfbs_in.append(getattr(self, key))
-#            elif val['driver'] in iqs_drivers:
-#                self.iqs.append(getattr(self, key))
-#
-#        # Configure the drivers.
-#        for pfb in self.pfbs_in:
-#            adc = pfb.dict['adc']['id']
-#
-#            # PFB.
-#            pfb.configure(self.adcs[adc]['fs']/self.adcs[adc]['decimation'])
-#
-#            # BUFF_ADC: mr_buffer_et.
-#            if pfb.HAS_BUFF_ADC:
-#                block = getattr(self, pfb.dict['buff_adc'])
-#                dma = getattr(self, pfb.dict['buff_adc_dma'])
-#                block.configure(dma)
-#
-#            # BUFF_PFB: axis_buffer_v1.
-#            if pfb.HAS_BUFF_PFB:
-#                block = getattr(self, pfb.dict['buff_pfb'])
-#                dma = getattr(self, pfb.dict['buff_pfb_dma'])
-#                block.configure(dma)
-#
-#            # BUFF_XFFT: axis_buffer_uram.
-#            if pfb.HAS_BUFF_XFFT:
-#                block = getattr(self, pfb.dict['buff_xfft'])
-#                dma = getattr(self, pfb.dict['buff_xfft_dma'])
-#                block.configure(dma, sync="yes")
-#
-#            # ACCUMULATOR: axis_accumulator_v1.
-#            if pfb.HAS_ACCUMULATOR:
-#                block = getattr(self, pfb.dict['accumulator'])
-#                dma = getattr(self, pfb.dict['dma'])
-#                block.configure(dma)
-#
-#        self['adcs'] = list(self.adcs.keys())
-#        self['dacs'] = list(self.dacs.keys())
-#        self['analysis'] = []
-#        self['synthesis'] = []
-#        for pfb in self.pfbs_in:
-#            thiscfg = {}
-#            thiscfg['type']     = 'analysis'
-#            thiscfg['pfb']      = pfb.fullpath
-#            thiscfg['fs']       = pfb.dict['freq']['fs']
-#            thiscfg['fs_ch']    = pfb.dict['freq']['fb']
-#            thiscfg['fc_ch']    = pfb.dict['freq']['fc']
-#            thiscfg['nch']      = pfb.dict['N']
-#            if pfb.HAS_ADC:
-#                thiscfg['adc'] = pfb.dict['adc']
-#            if pfb.HAS_XFFT:
-#                thiscfg['xfft'] = pfb.dict['xfft']
-#            if pfb.HAS_ACCUMULATOR:
-#                thiscfg['accumulator'] = pfb.dict['accumulator']
-#            if pfb.HAS_BUFF_ADC:
-#                thiscfg['buff_adc'] = pfb.dict['buff_adc']
-#            if pfb.HAS_BUFF_PFB:
-#                thiscfg['buff_pfb'] = pfb.dict['buff_pfb']
-#            if pfb.HAS_BUFF_XFFT:
-#                thiscfg['buff_xfft'] = pfb.dict['buff_xfft']
-#
-#            self['analysis'].append(thiscfg)
-#
-#        # IQ Constant based synthesis.
-#        for iq in self.iqs:
-#            thiscfg = {}
-#            thiscfg['type'] = 'synthesis'
-#            thiscfg['iq']   = iq.fullpath
-#            thiscfg['dac']  = iq.dict['dac']
-#
-#            self['synthesis'].append(thiscfg)
-
+        
+        # Configure PLLs if requested, or if any ADC/DAC is not locked.
+        if force_init_clks:
+            self.set_all_clks()
+            self.download()
+        else:
+            self.download()        
+        
         #################
         ### ADC Chain ###
         #################
         # PFB 8x16.
         self.pfb = self.axis_pfb_8x16_v1_0        
         self.pfb.configure(self.adcs['00']['fs']/2)
+        print('Pasamos pfb_8x16...')
         
         # Accumulator 16x16384.
         self.acc_full = self.axis_accumulator_0
         self.acc_full.configure(self.axi_dma_0)
+        print('Pasamos acc_0...')
         
         # Channel selection (PFB).
         self.chsel = self.axis_chsel_pfb_x1_0
@@ -741,24 +615,34 @@ class TopSoc(Overlay, QickConfig):
         # PFB quantization.
         self.pfb.qout(3)
         
-    def config_clocks(self, force_init_clks):
-        """
-        Configure PLLs if requested, or if any ADC/DAC is not locked.
-        """
-              
-        # if we're changing the clock config, we must set the clocks to apply the config
-        if force_init_clks or (self.external_clk is not None) or (self.clk_output is not None):
-            QickSoc.set_all_clks(self)
-            self.download()
-        else:
-            self.download()
-            if not QickSoc.clocks_locked(self):
-                QickSoc.set_all_clks(self)
-                self.download()
-        if not QickSoc.clocks_locked(self):
-            print(
-                "Not all DAC and ADC PLLs are locked. You may want to repeat the initialization of the QickSoc.")
+    def findPeak(self, x,y,xmin=-1,xmax=-1):
+        if xmin == -1:
+            xmin = np.min(x)        
+        if xmax == -1:
+            xmax = np.max(x)        
 
+        imin = np.argwhere(x <= xmin)
+        imin = imin[-1].item()
+        imax = np.argwhere(x >= xmax)
+        imax = imax[0].item()
+
+        # Find max.
+        idxmax = np.argmax(y[imin:imax]) + imin
+
+        # x, y.
+        Xmax = x[idxmax].item()
+        Ymax = y[idxmax].item()
+
+        return Xmax, Ymax        
+    
+    # Sort FFT data. Output FFT is bit-reversed. Index is given by idx array.
+    def sort_br(self, x, idx):
+        x_sort = np.zeros(len(x)) + 1j*np.zeros(len(x))
+        for i in np.arange(len(x)):
+            x_sort[idx[i]] = x[i]
+
+        return x_sort    
+        
     def list_rf_blocks(self, rf_config):
         """
         Lists the enabled ADCs and DACs and get the sampling frequencies.
@@ -766,7 +650,7 @@ class TopSoc(Overlay, QickConfig):
         This re-implements that functionality.
         """
 
-        self.hs_adc = rf_config['C_High_Speed_ADC'] == '1'
+        hs_adc = rf_config['C_High_Speed_ADC']=='1'
 
         self.dac_tiles = []
         self.adc_tiles = []
@@ -777,53 +661,53 @@ class TopSoc(Overlay, QickConfig):
         self.adcs = {}
 
         for iTile in range(4):
-            if rf_config['C_DAC%d_Enable' % (iTile)] != '1':
+            if rf_config['C_DAC%d_Enable'%(iTile)]!='1':
                 continue
             self.dac_tiles.append(iTile)
-            f_fabric = float(rf_config['C_DAC%d_Fabric_Freq' % (iTile)])
-            f_refclk = float(rf_config['C_DAC%d_Refclk_Freq' % (iTile)])
+            f_fabric = float(rf_config['C_DAC%d_Fabric_Freq'%(iTile)])
+            f_refclk = float(rf_config['C_DAC%d_Refclk_Freq'%(iTile)])
             dac_fabric_freqs.append(f_fabric)
             refclk_freqs.append(f_refclk)
-            fs = float(rf_config['C_DAC%d_Sampling_Rate' % (iTile)])*1000
-            interpolation = int(rf_config['C_DAC%d_Interpolation' % (iTile)])
+            fs = float(rf_config['C_DAC%d_Sampling_Rate'%(iTile)])*1000
             for iBlock in range(4):
-                if rf_config['C_DAC_Slice%d%d_Enable' % (iTile, iBlock)] != 'true':
+                if rf_config['C_DAC_Slice%d%d_Enable'%(iTile,iBlock)]!='true':
                     continue
-                self.dacs["%d%d" % (iTile, iBlock)] = {'fs': fs,
-                                                       'f_fabric': f_fabric,
-                                                       'interpolation' : interpolation}
+                self.dacs["%d%d"%(iTile,iBlock)] = {'fs':fs,
+                                                    'f_fabric':f_fabric,
+                                                    'tile':iTile,
+                                                    'block':iBlock}
 
         for iTile in range(4):
-            if rf_config['C_ADC%d_Enable' % (iTile)] != '1':
+            if rf_config['C_ADC%d_Enable'%(iTile)]!='1':
                 continue
             self.adc_tiles.append(iTile)
-            f_fabric = float(rf_config['C_ADC%d_Fabric_Freq' % (iTile)])
-            f_refclk = float(rf_config['C_ADC%d_Refclk_Freq' % (iTile)])
+            f_fabric = float(rf_config['C_ADC%d_Fabric_Freq'%(iTile)])
+            f_refclk = float(rf_config['C_ADC%d_Refclk_Freq'%(iTile)])
             adc_fabric_freqs.append(f_fabric)
             refclk_freqs.append(f_refclk)
-            fs = float(rf_config['C_ADC%d_Sampling_Rate' % (iTile)])*1000
-            decimation = int(rf_config['C_ADC%d_Decimation' % (iTile)])
+            fs = float(rf_config['C_ADC%d_Sampling_Rate'%(iTile)])*1000
+            #for iBlock,block in enumerate(tile.blocks):
             for iBlock in range(4):
-                if self.hs_adc:
-                    if iBlock >= 2 or rf_config['C_ADC_Slice%d%d_Enable' % (iTile, 2*iBlock)] != 'true':
+                if hs_adc:
+                    if iBlock>=2 or rf_config['C_ADC_Slice%d%d_Enable'%(iTile,2*iBlock)]!='true':
                         continue
                 else:
-                    if rf_config['C_ADC_Slice%d%d_Enable' % (iTile, iBlock)] != 'true':
+                    if rf_config['C_ADC_Slice%d%d_Enable'%(iTile,iBlock)]!='true':
                         continue
-                self.adcs["%d%d" % (iTile, iBlock)] = {'fs': fs,
-                                                       'f_fabric': f_fabric,
-                                                       'decimation' : decimation}
+                self.adcs["%d%d"%(iTile,iBlock)] = {'fs':fs,
+                                                    'f_fabric':f_fabric,
+                                                    'tile':iTile,
+                                                    'block':iBlock}
 
-        def get_common_freq(freqs):
-            """
-            Check that all elements of the list are equal, and return the common value.
-            """
-            if not freqs:  # input is empty list
-                return None
-            if len(set(freqs)) != 1:
-                raise RuntimeError("Unexpected frequencies:", freqs)
-            return freqs[0]
-
-        self['refclk_freq'] = get_common_freq(refclk_freqs)
-
-
+    def set_all_clks(self):
+        """
+        Resets all the board clocks
+        """
+        if self.cfg['board']=='ZCU111':
+            print("resetting clocks:",self.cfg['refclk_freq'])
+            xrfclk.set_all_ref_clks(self.cfg['refclk_freq'])
+        elif self.cfg['board']=='ZCU216':
+            lmk_freq = self.cfg['refclk_freq']
+            lmx_freq = self.cfg['refclk_freq']*2
+            print("resetting clocks:",lmk_freq, lmx_freq)
+            xrfclk.set_ref_clks(lmk_freq=lmk_freq, lmx_freq=lmx_freq)
