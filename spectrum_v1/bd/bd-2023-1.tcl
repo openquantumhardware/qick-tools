@@ -1255,6 +1255,12 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
     CONFIG.PSU__SATA__REF_CLK_FREQ {125} \
     CONFIG.PSU__SATA__REF_CLK_SEL {Ref Clk3} \
     CONFIG.PSU__SAXIGP0__DATA_WIDTH {128} \
+    CONFIG.PSU__SD0__CLK_100_SDR_OTAP_DLY {0x3} \
+    CONFIG.PSU__SD0__CLK_200_SDR_OTAP_DLY {0x3} \
+    CONFIG.PSU__SD0__CLK_50_DDR_ITAP_DLY {0x3D} \
+    CONFIG.PSU__SD0__CLK_50_DDR_OTAP_DLY {0x4} \
+    CONFIG.PSU__SD0__CLK_50_SDR_ITAP_DLY {0x15} \
+    CONFIG.PSU__SD0__CLK_50_SDR_OTAP_DLY {0x5} \
     CONFIG.PSU__SD0__PERIPHERAL__ENABLE {0} \
     CONFIG.PSU__SD0__RESET__ENABLE {0} \
     CONFIG.PSU__SD1_COHERENCY {0} \
@@ -1410,6 +1416,7 @@ Port;FD4A0000;FD4AFFFF;1|FPD;DPDMA;FD4C0000;FD4CFFFF;1|FPD;DDR_XMPU5_CFG;FD05000
   set_property -dict [list \
     CONFIG.AXIS_IN_DW {64} \
     CONFIG.AXIS_OUT_DW {128} \
+    CONFIG.FFT_AW {14} \
     CONFIG.FFT_STORE {1} \
     CONFIG.IQ_FORMAT {1} \
     CONFIG.MEM_DW {72} \
@@ -1567,21 +1574,21 @@ preplace inst axis_pfb_8x16_v1_0 -pg 1 -lvl 6 -x 2190 -y 1100 -defaultsOSRD
 preplace inst axis_accumulator_0 -pg 1 -lvl 10 -x 3520 -y 1100 -defaultsOSRD
 preplace inst axis_accumulator_1 -pg 1 -lvl 13 -x 4540 -y 1900 -defaultsOSRD -resize 240 176
 preplace inst axis_buffer_0 -pg 1 -lvl 11 -x 3920 -y 1350 -defaultsOSRD
-preplace netloc rst_100_peripheral_aresetn 1 0 15 -10 1130 340 1130 1100 1130 N 1130 N 1130 2070 1310 N 1310 2660 1420 2960 1290 3320 1220 3770 1760 4060 1770 4400 1770 4710 1770 5000
-preplace netloc rst_adc0_peripheral_aresetn 1 1 13 400 1110 1030 1110 1520J 1110 1770 1110 2020 1210 2340 1150 2690 1150 2950 1070 3300 1410 3740 1980 4050 2080 4360 1790 4700
-preplace netloc rst_dac1_peripheral_aresetn 1 0 3 -10 1750 320 1750 1010
-preplace netloc usp_rf_data_converter_0_clk_adc0 1 1 13 390 980 1040 1120 1500 1080 1790 1100 2030 1220 2330 1160 2680 1160 2970 1080 3280 1420 3750 2000 4100 2090 4400 2010 4710
-preplace netloc usp_rf_data_converter_0_clk_dac1 1 0 3 30 1740 360 2280 1020
+preplace netloc rst_100_peripheral_aresetn 1 0 15 0 1130 350 1130 1100 1130 N 1130 N 1130 2070 1310 N 1310 2660 1420 2960 1290 3320 1220 3770 1760 4060 1770 4400 1770 4710 1770 5000
+preplace netloc rst_adc0_peripheral_aresetn 1 1 13 410 1110 1020 1110 1530J 1110 1770 1110 2020 1210 2340 1150 2690 1150 2950 1070 3300 1410 3740 1980 4050 2080 4360 1790 4700
+preplace netloc rst_dac1_peripheral_aresetn 1 0 3 0 1750 330 1750 1000
+preplace netloc usp_rf_data_converter_0_clk_adc0 1 1 13 400 980 1030 1120 1510 1080 1790 1100 2030 1220 2330 1160 2680 1160 2970 1080 3280 1420 3750 2000 4100 2090 4400 2010 4710
+preplace netloc usp_rf_data_converter_0_clk_dac1 1 0 3 40 1740 370 2280 1010
 preplace netloc xlconstant_0_dout 1 10 1 3780 1430n
-preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 0 15 -20 10 370 -190 1060 130 N 130 N 130 2040 1230 N 1230 2700 1170 2960 1060 3360 990 3710 1560 4080 1780 4390 1780 4680 1780 4990
-preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 1 2 410 580 1020
-preplace netloc adc0_clk_1 1 0 2 NJ 2010 350
-preplace netloc axi_dma_0_M_AXI_S2MM 1 0 16 30 1080 N 1080 N 1080 1410 1070 N 1070 1990 970 N 970 N 970 N 970 N 970 N 970 N 970 N 970 N 970 N 970 5370
-preplace netloc axi_dma_1_M_AXI_S2MM 1 0 16 20 1090 NJ 1090 NJ 1090 NJ 1090 NJ 1090 2000J 980 NJ 980 NJ 980 NJ 980 N 980 NJ 980 NJ 980 NJ 980 NJ 980 NJ 980 5400
-preplace netloc axi_dma_2_M_AXI_MM2S 1 0 16 -30 1410 NJ 1410 NJ 1410 NJ 1410 NJ 1410 NJ 1410 NJ 1410 NJ 1410 2980J 1300 3360 1230 3720J 1200 NJ 1200 NJ 1200 NJ 1200 NJ 1200 5370
-preplace netloc axi_dma_2_M_AXI_S2MM 1 0 16 0 1100 NJ 1100 NJ 1100 NJ 1100 1780J 1040 2050J 990 NJ 990 NJ 990 2980J 1090 3290 1210 NJ 1210 NJ 1210 NJ 1210 NJ 1210 NJ 1210 5380
+preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 0 15 -10 10 380 -190 1060 130 N 130 N 130 2040 1230 N 1230 2700 1170 2960 1060 3360 990 3710 1560 4080 1780 4390 1780 4680 1780 4990
+preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 1 2 420 580 1010
+preplace netloc adc0_clk_1 1 0 2 NJ 2010 360
+preplace netloc axi_dma_0_M_AXI_S2MM 1 0 16 40 1080 N 1080 N 1080 1410 1070 N 1070 1990 970 N 970 N 970 N 970 N 970 N 970 N 970 N 970 N 970 N 970 5370
+preplace netloc axi_dma_1_M_AXI_S2MM 1 0 16 30 1090 NJ 1090 NJ 1090 NJ 1090 NJ 1090 2000J 980 NJ 980 NJ 980 NJ 980 N 980 NJ 980 NJ 980 NJ 980 NJ 980 NJ 980 5400
+preplace netloc axi_dma_2_M_AXI_MM2S 1 0 16 -20 1410 NJ 1410 NJ 1410 NJ 1410 NJ 1410 NJ 1410 NJ 1410 NJ 1410 2980J 1300 3360 1230 3720J 1200 NJ 1200 NJ 1200 NJ 1200 NJ 1200 5370
+preplace netloc axi_dma_2_M_AXI_S2MM 1 0 16 10 1100 NJ 1100 NJ 1100 NJ 1100 1780J 1040 2050J 990 NJ 990 NJ 990 2980J 1090 3290 1210 NJ 1210 NJ 1210 NJ 1210 NJ 1210 NJ 1210 5380
 preplace netloc axi_dma_3_M_AXIS_MM2S 1 10 6 3790 990 NJ 990 NJ 990 NJ 990 NJ 990 5390
-preplace netloc axi_smc_M00_AXI 1 1 1 360 -130n
+preplace netloc axi_smc_M00_AXI 1 1 1 350 -130n
 preplace netloc axis_accumulator_0_m_axis 1 10 1 3680 1050n
 preplace netloc axis_accumulator_1_m_axis 1 13 1 4690 1840n
 preplace netloc axis_broadcaster_0_M01_AXIS 1 7 1 2640 1080n
@@ -1593,15 +1600,15 @@ preplace netloc axis_chsel_pfb_x1_0_m_axis 1 8 2 2940 1310 N
 preplace netloc axis_clock_converter_0_M_AXIS 1 11 4 4090 1070 N 1070 N 1070 N
 preplace netloc axis_clock_converter_1_M_AXIS 1 14 1 5010 1870n
 preplace netloc axis_clock_converter_2_M_AXIS 1 11 1 4090 1660n
-preplace netloc axis_constant_iq_0_m_axis 1 1 1 380 1640n
+preplace netloc axis_constant_iq_0_m_axis 1 1 1 390 1640n
 preplace netloc axis_ddscic_v3_0_m_axis 1 11 1 4070 1870n
 preplace netloc axis_pfb_8x16_v1_0_m_axis 1 6 1 2310 1050n
-preplace netloc axis_register_slice_0_M_AXIS 1 4 1 1740 940n
+preplace netloc axis_register_slice_0_M_AXIS 1 4 1 1730 940n
 preplace netloc axis_reorder_iq_v1_0_m_axis 1 5 1 2060J 960n
 preplace netloc axis_wxfft_65536_0_m_axis_data 1 12 1 4370 1850n
 preplace netloc axis_xfft_16x16384_0_m_axis 1 8 2 2940 1050 N
 preplace netloc combiner_iq_M_AXIS 1 3 1 1440 960n
-preplace netloc dac1_clk_1 1 0 2 NJ 2040 330
+preplace netloc dac1_clk_1 1 0 2 NJ 2040 340
 preplace netloc ps8_0_axi_periph_M00_AXI 1 3 12 1440 -280 NJ -280 NJ -280 NJ -280 NJ -280 NJ -280 3360 900 NJ 900 NJ 900 NJ 900 NJ 900 5000J
 preplace netloc ps8_0_axi_periph_M01_AXI 1 3 12 1430 -260 NJ -260 NJ -260 NJ -260 NJ -260 NJ -260 3350 910 NJ 910 NJ 910 NJ 910 NJ 910 4980J
 preplace netloc ps8_0_axi_periph_M02_AXI 1 3 12 1420 -250 NJ -250 NJ -250 NJ -250 NJ -250 NJ -250 3340 920 NJ 920 NJ 920 NJ 920 NJ 920 4970J
@@ -1609,17 +1616,17 @@ preplace netloc ps8_0_axi_periph_M03_AXI 1 3 7 1410 -240 NJ -240 NJ -240 NJ -240
 preplace netloc ps8_0_axi_periph_M04_AXI 1 3 10 1400 -230 NJ -230 NJ -230 NJ -230 NJ -230 NJ -230 3330 930 NJ 930 NJ 930 4380J
 preplace netloc ps8_0_axi_periph_M05_AXI 1 3 8 NJ -220 NJ -220 NJ -220 NJ -220 NJ -220 NJ -220 3320 940 3780
 preplace netloc ps8_0_axi_periph_M06_AXI 1 3 5 NJ -200 NJ -200 NJ -200 NJ -200 2650
-preplace netloc ps8_0_axi_periph_M07_AXI 1 0 4 10 1060 NJ 1060 NJ 1060 1410
+preplace netloc ps8_0_axi_periph_M07_AXI 1 0 4 20 1060 NJ 1060 NJ 1060 1410
 preplace netloc ps8_0_axi_periph_M08_AXI 1 3 8 NJ -160 NJ -160 NJ -160 NJ -160 NJ -160 NJ -160 3190 950 3730
 preplace netloc ps8_0_axi_periph_M09_AXI 1 3 3 1440 -130 NJ -130 2070J
 preplace netloc ps8_0_axi_periph_M10_AXI 1 3 9 NJ -120 NJ -120 NJ -120 NJ -120 NJ -120 NJ -120 3170 960 NJ 960 4100
-preplace netloc ps8_0_axi_periph_M11_AXI 1 1 3 410 1070 NJ 1070 1400
+preplace netloc ps8_0_axi_periph_M11_AXI 1 1 3 420 1070 NJ 1070 1400
 preplace netloc sysref_in_1 1 0 2 NJ 2100 N
-preplace netloc usp_rf_data_converter_0_m00_axis 1 2 1 1050 940n
-preplace netloc usp_rf_data_converter_0_m01_axis 1 2 1 1060 960n
+preplace netloc usp_rf_data_converter_0_m00_axis 1 2 1 1040 940n
+preplace netloc usp_rf_data_converter_0_m01_axis 1 2 1 1050 960n
 preplace netloc usp_rf_data_converter_0_vout13 1 2 14 NJ 2100 N 2100 N 2100 N 2100 N 2100 N 2100 N 2100 N 2100 N 2100 N 2100 N 2100 N 2100 N 2100 N
-preplace netloc vin0_01_1 1 0 2 NJ 2070 310
-preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 2 1 1020 -490n
+preplace netloc vin0_01_1 1 0 2 NJ 2070 300
+preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 2 1 1010 -490n
 levelinfo -pg 1 -50 170 710 1250 1630 1890 2190 2490 2820 3150 3520 3920 4230 4540 4840 5190 5430
 pagesize -pg 1 -db -bbox -sgen -170 -910 5530 2840
 "
