@@ -1,5 +1,6 @@
 from qick.qick import *
-import matplotlib.pyplot as plt
+from helpers import *
+import numpy as np
 import time
 
 class AxisConstantIQ(SocIp):
@@ -8,12 +9,12 @@ class AxisConstantIQ(SocIp):
     # IMAG_REG : 16-bit.
     # WE_REG   : 1-bit. Update registers.
     bindto = ['user.org:user:axis_constant_iq:1.0']
-    REGISTERS = {'real_reg':0, 'imag_reg':1, 'we_reg':2}
         
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
 
+        self.REGISTERS = {'real_reg':0, 'imag_reg':1, 'we_reg':2}
         # Generics.
         # Dictionary.
         self.dict = {}
@@ -42,13 +43,6 @@ class AxisConstantIQ(SocIp):
         
 class AxisDdsCicV3(SocIp):
     bindto = ['user.org:user:axis_ddscic_v3:1.0']
-    REGISTERS = {'pinc_reg'     : 0, 
-                 'pinc_we_reg'  : 1, 
-                 'prodsel_reg'  : 2,
-                 'cicsel_reg'   : 3,
-                 'qprod_reg'    : 4, 
-                 'qcic_reg'     : 5, 
-                 'dec_reg'      : 6}
     
     # Decimation range.
     MIN_D       = 2
@@ -73,6 +67,13 @@ class AxisDdsCicV3(SocIp):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'pinc_reg'     : 0, 
+                          'pinc_we_reg'  : 1, 
+                          'prodsel_reg'  : 2,
+                          'cicsel_reg'   : 3,
+                          'qprod_reg'    : 4, 
+                          'qcic_reg'     : 5, 
+                          'dec_reg'      : 6}
         # Default registers.
         self.pinc_reg       = 0              # DC frequency.
         self.pinc_we_reg    = 0              # Don't write.
@@ -155,7 +156,6 @@ class AxisDdsCicV3(SocIp):
 
 class AxisWxfft65536(SocIp):
     bindto = ['user.org:user:axis_wxfft_65536:1.0']
-    REGISTERS = {'dw_addr_reg':0, 'dw_we_reg':1}
     
     # Number of FFT points.
     N = 65536
@@ -170,6 +170,7 @@ class AxisWxfft65536(SocIp):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'dw_addr_reg':0, 'dw_we_reg':1}
         # Default registers.
         self.dw_addr_reg    = 0
         self.dw_we_reg      = 0 # Don't write.            
@@ -230,9 +231,7 @@ class AxisWxfft65536(SocIp):
         self.dw_we_reg = 0
 
 class AxisPfb8x16V1(SocIp):
-    bindto = ['user.org:user:axis_pfb_8x16_v1:1.0']
-    REGISTERS = {   'scale_reg' : 0,
-                    'qout_reg'  : 1}
+    bindto = ['user.org:user:axis_pfb_8x16_v1:1.0', 'QICK:QICK:axis_pfb_8x16_v1:1.0']
     
     # Generic parameters.
     N = 16
@@ -241,6 +240,8 @@ class AxisPfb8x16V1(SocIp):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = { 'scale_reg' : 0,
+                           'qout_reg'  : 1}
         # Default registers.
         self.scale_reg  = 0
         self.qout_reg   = 0
@@ -284,20 +285,20 @@ class AxisPfb8x16V1(SocIp):
           
 class AxisAccumulatorV6(SocIp):
     bindto = ['user.org:user:axis_accumulator:1.0']
-    REGISTERS = {   'process_reg'           :0, 
-                    'tx_and_cnt_reg'        :1, 
-                    'tx_and_rst_reg'        :2, 
-                    'usr_round_samples_reg' :3, 
-                    'usr_epoch_rounds_reg'  :4, 
-                    'debug_reg'             :12, 
-                    'round_cnt_reg'         :13, 
-                    'epoch_cnt_reg'         :14, 
-                    'transmitting_reg'      :15}
         
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = { 'process_reg'           :0, 
+                           'tx_and_cnt_reg'        :1, 
+                           'tx_and_rst_reg'        :2, 
+                           'usr_round_samples_reg' :3, 
+                           'usr_epoch_rounds_reg'  :4, 
+                           'debug_reg'             :12, 
+                           'round_cnt_reg'         :13, 
+                           'epoch_cnt_reg'         :14, 
+                           'transmitting_reg'      :15}
         # Default registers.
         self.process_reg            = 0
         self.tx_and_cnt_reg         = 0
@@ -338,6 +339,7 @@ class AxisAccumulatorV6(SocIp):
             # * One more for metadata.
             # NOTE: each sample is 128 bits.
             self.BUFFER_LENGTH = 2**(self.FFT_AW-1) * 2**self.BANK_ARRAY_AW + 1
+            print("pasamos FFT 16k")
 
 
         # 1 input.
@@ -355,6 +357,7 @@ class AxisAccumulatorV6(SocIp):
             # * One more for metadata.
             # NOTE: each sample is 128 bits.
             self.BUFFER_LENGTH = 2**self.FFT_AW + 1
+            print("pasamos FFT 64k")
             
         else:
             raise ValueError('Number of parallel input=%d not supported. Must be 1 or 16'%2**(self.BANK_ARRAY_AW))
@@ -362,9 +365,9 @@ class AxisAccumulatorV6(SocIp):
         # Define buffer:         
         self.buff = allocate(shape=(self.BUFFER_LENGTH,2), dtype=np.int64)
 
-        # FFT Length.
-        self.FFT_N = 2**self.FFT_AW
-
+#        # FFT Length.
+#        self.FFT_N = 2**self.FFT_AW
+#
     def configure(self, dma):
         self.dma = dma
 
@@ -453,18 +456,19 @@ class AxisChSelPfbx1(SocIp):
 
     """
     bindto = ['user.org:user:axis_chsel_pfb_x1:1.0']
-    REGISTERS = {'chid_reg' : 0}
     
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
 
+        self.REGISTERS = {'chid_reg' : 0}
         # Generics.
         self.B = int(description['parameters']['B'])
         self.N = int(description['parameters']['N'])
 
         # Default registers.
         self.set()
+        print("pasamos chsel...")
 
     def set(self,ch=0):
         # Change channel
@@ -480,12 +484,12 @@ class AxisBuffer(SocIp):
     # * 0 : start reader.
     # * 1 : stop reader.
     bindto = ['user.org:user:axis_buffer:1.0']
-    REGISTERS = {'dw_capture' : 0, 'dr_start' : 1}
     
     def __init__(self, description):
         # Initialize ip
         super().__init__(description)
         
+        self.REGISTERS = {'dw_capture' : 0, 'dr_start' : 1}
         # Default registers.
         self.dw_capture = 0
         self.dr_start = 0
@@ -542,26 +546,154 @@ class AxisBuffer(SocIp):
         # Transfer data.
         return self.transfer()    
 
-class TopSoc(Overlay):    
+class TopSoc(Overlay, QickConfig):    
+
     # Constructor.
-    def __init__(self, bitfile=None, force_init_clks=False,ignore_version=True, **kwargs):
-        # Load overlay (don't download to PL).
+    def __init__(self, bitfile, force_init_clks=False, ignore_version=True, **kwargs):
+        """
+        Constructor method
+        """
+
+        self.external_clk = False
+        self.clk_output = False
+
+        # Load bitstream.
         Overlay.__init__(self, bitfile, ignore_version=ignore_version, download=False, **kwargs)
-        
-        # Configuration dictionary.
-        self.cfg = {}
-        self.cfg['board'] = os.environ["BOARD"]        
-        self.cfg['refclk_freq'] = 409.6
+
+        # Initialize the configuration
+        self._cfg = {}
+        QickConfig.__init__(self)
+
+        self['board'] = os.environ["BOARD"]
 
         # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
         self.list_rf_blocks(self.ip_dict['usp_rf_data_converter_0']['parameters'])
-        
-        # Configure PLLs if requested, or if any ADC/DAC is not locked.
-        if force_init_clks:
-            self.set_all_clks()
-            self.download()
-        else:
-            self.download()        
+
+        self.config_clocks(force_init_clks)
+
+        # RF data converter (for configuring ADCs and DACs, and setting NCOs)
+        self.rf = self.usp_rf_data_converter_0
+        self.rf.configure(self)
+
+        # Extract the IP connectivity information from the HWH parser and metadata.
+        self.metadata = QickMetadata(self)
+
+        self.map_signal_paths()
+
+    def description(self):
+        """Generate a printable description of the QICK configuration.
+
+        Parameters
+        ----------
+
+        Returns
+        -------
+        str
+            description
+
+        """
+        lines = []
+        lines.append("\n\tBoard: " + self['board'])
+
+        # Analysis Chains.
+        if len(self['analysis']) > 0:
+            for i, chain in enumerate(self['analysis']):
+                adc_ = self.adcs[chain['adc']['id']]
+                lines.append("\tAnalysis %d:" % (i))
+                lines.append("\t\tADC: %d_%d, fs = %.1f MHz, Decimation    = %d" %
+                             (224+int(chain['adc']['tile']), int(chain['adc']['ch']), adc_['fs'], adc_['decimation']))
+                lines.append("\t\tPFB: fs = %.1f MHz, fc = %.1f MHz, %d channels" %
+                             (chain['fs_ch'], chain['fc_ch'], chain['nch']))
+                #lines.append("\t\tXFFT
+        return "\nSPECTRUM configuration:\n"+"\n".join(lines)
+
+#    def map_signal_paths(self):
+#        # Use the HWH parser to trace connectivity and deduce the channel numbering.
+#        for key, val in self.ip_dict.items():
+#            if hasattr(val['driver'], 'configure_connections'):
+#                getattr(self, key).configure_connections(self)
+#
+#        # PFB for Analysis.
+#        self.pfbs_in = []
+#        pfbs_in_drivers = set([AxisPfbAnalysis])
+#
+#        # IQ Constants.
+#        self.iqs = []
+#        iqs_drivers = set([AxisConstantIQ])
+#
+#        # Populate the lists with the registered IP blocks.
+#        for key, val in self.ip_dict.items():
+#            if val['driver'] in pfbs_in_drivers:
+#                self.pfbs_in.append(getattr(self, key))
+#            elif val['driver'] in iqs_drivers:
+#                self.iqs.append(getattr(self, key))
+#
+#        # Configure the drivers.
+#        for pfb in self.pfbs_in:
+#            adc = pfb.dict['adc']['id']
+#
+#            # PFB.
+#            pfb.configure(self.adcs[adc]['fs']/self.adcs[adc]['decimation'])
+#
+#            # BUFF_ADC: mr_buffer_et.
+#            if pfb.HAS_BUFF_ADC:
+#                block = getattr(self, pfb.dict['buff_adc'])
+#                dma = getattr(self, pfb.dict['buff_adc_dma'])
+#                block.configure(dma)
+#
+#            # BUFF_PFB: axis_buffer_v1.
+#            if pfb.HAS_BUFF_PFB:
+#                block = getattr(self, pfb.dict['buff_pfb'])
+#                dma = getattr(self, pfb.dict['buff_pfb_dma'])
+#                block.configure(dma)
+#
+#            # BUFF_XFFT: axis_buffer_uram.
+#            if pfb.HAS_BUFF_XFFT:
+#                block = getattr(self, pfb.dict['buff_xfft'])
+#                dma = getattr(self, pfb.dict['buff_xfft_dma'])
+#                block.configure(dma, sync="yes")
+#
+#            # ACCUMULATOR: axis_accumulator_v1.
+#            if pfb.HAS_ACCUMULATOR:
+#                block = getattr(self, pfb.dict['accumulator'])
+#                dma = getattr(self, pfb.dict['dma'])
+#                block.configure(dma)
+#
+#        self['adcs'] = list(self.adcs.keys())
+#        self['dacs'] = list(self.dacs.keys())
+#        self['analysis'] = []
+#        self['synthesis'] = []
+#        for pfb in self.pfbs_in:
+#            thiscfg = {}
+#            thiscfg['type']     = 'analysis'
+#            thiscfg['pfb']      = pfb.fullpath
+#            thiscfg['fs']       = pfb.dict['freq']['fs']
+#            thiscfg['fs_ch']    = pfb.dict['freq']['fb']
+#            thiscfg['fc_ch']    = pfb.dict['freq']['fc']
+#            thiscfg['nch']      = pfb.dict['N']
+#            if pfb.HAS_ADC:
+#                thiscfg['adc'] = pfb.dict['adc']
+#            if pfb.HAS_XFFT:
+#                thiscfg['xfft'] = pfb.dict['xfft']
+#            if pfb.HAS_ACCUMULATOR:
+#                thiscfg['accumulator'] = pfb.dict['accumulator']
+#            if pfb.HAS_BUFF_ADC:
+#                thiscfg['buff_adc'] = pfb.dict['buff_adc']
+#            if pfb.HAS_BUFF_PFB:
+#                thiscfg['buff_pfb'] = pfb.dict['buff_pfb']
+#            if pfb.HAS_BUFF_XFFT:
+#                thiscfg['buff_xfft'] = pfb.dict['buff_xfft']
+#
+#            self['analysis'].append(thiscfg)
+#
+#        # IQ Constant based synthesis.
+#        for iq in self.iqs:
+#            thiscfg = {}
+#            thiscfg['type'] = 'synthesis'
+#            thiscfg['iq']   = iq.fullpath
+#            thiscfg['dac']  = iq.dict['dac']
+#
+#            self['synthesis'].append(thiscfg)
 
         #################
         ### ADC Chain ###
@@ -609,34 +741,24 @@ class TopSoc(Overlay):
         # PFB quantization.
         self.pfb.qout(3)
         
-    def findPeak(self, x,y,xmin=-1,xmax=-1):
-        if xmin == -1:
-            xmin = np.min(x)        
-        if xmax == -1:
-            xmax = np.max(x)        
+    def config_clocks(self, force_init_clks):
+        """
+        Configure PLLs if requested, or if any ADC/DAC is not locked.
+        """
+              
+        # if we're changing the clock config, we must set the clocks to apply the config
+        if force_init_clks or (self.external_clk is not None) or (self.clk_output is not None):
+            QickSoc.set_all_clks(self)
+            self.download()
+        else:
+            self.download()
+            if not QickSoc.clocks_locked(self):
+                QickSoc.set_all_clks(self)
+                self.download()
+        if not QickSoc.clocks_locked(self):
+            print(
+                "Not all DAC and ADC PLLs are locked. You may want to repeat the initialization of the QickSoc.")
 
-        imin = np.argwhere(x <= xmin)
-        imin = imin[-1].item()
-        imax = np.argwhere(x >= xmax)
-        imax = imax[0].item()
-
-        # Find max.
-        idxmax = np.argmax(y[imin:imax]) + imin
-
-        # x, y.
-        Xmax = x[idxmax].item()
-        Ymax = y[idxmax].item()
-
-        return Xmax, Ymax        
-    
-    # Sort FFT data. Output FFT is bit-reversed. Index is given by idx array.
-    def sort_br(self, x, idx):
-        x_sort = np.zeros(len(x)) + 1j*np.zeros(len(x))
-        for i in np.arange(len(x)):
-            x_sort[idx[i]] = x[i]
-
-        return x_sort    
-        
     def list_rf_blocks(self, rf_config):
         """
         Lists the enabled ADCs and DACs and get the sampling frequencies.
@@ -669,9 +791,7 @@ class TopSoc(Overlay):
                     continue
                 self.dacs["%d%d" % (iTile, iBlock)] = {'fs': fs,
                                                        'f_fabric': f_fabric,
-                                                       'interpolation' : interpolation,
-                                                       'tile': iTile,
-                                                       'block':iBlock}
+                                                       'interpolation' : interpolation}
 
         for iTile in range(4):
             if rf_config['C_ADC%d_Enable' % (iTile)] != '1':
@@ -692,19 +812,18 @@ class TopSoc(Overlay):
                         continue
                 self.adcs["%d%d" % (iTile, iBlock)] = {'fs': fs,
                                                        'f_fabric': f_fabric,
-                                                       'decimation' : decimation,
-                                                       'tile': iTile,
-                                                       'block': iBlock}
+                                                       'decimation' : decimation}
 
-    def set_all_clks(self):
-        """
-        Resets all the board clocks
-        """
-        if self.cfg['board']=='ZCU111':
-            print("resetting clocks:",self.cfg['refclk_freq'])
-            xrfclk.set_all_ref_clks(self.cfg['refclk_freq'])
-        elif self.cfg['board']=='ZCU216':
-            lmk_freq = self.cfg['refclk_freq']
-            lmx_freq = self.cfg['refclk_freq']*2
-            print("resetting clocks:",lmk_freq, lmx_freq)
-            xrfclk.set_ref_clks(lmk_freq=lmk_freq, lmx_freq=lmx_freq)
+        def get_common_freq(freqs):
+            """
+            Check that all elements of the list are equal, and return the common value.
+            """
+            if not freqs:  # input is empty list
+                return None
+            if len(set(freqs)) != 1:
+                raise RuntimeError("Unexpected frequencies:", freqs)
+            return freqs[0]
+
+        self['refclk_freq'] = get_common_freq(refclk_freqs)
+
+

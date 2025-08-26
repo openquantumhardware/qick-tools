@@ -516,7 +516,7 @@ class SynthesisChain():
     # Constructor.
     def __init__(self, soc, chain):
         # Sanity check. Is soc the right type?
-        if isinstance(soc, MkidsSoc) == False:
+        if not isinstance(soc, MkidsSoc):
             raise RuntimeError("%s (MkidsSoc, SynthesisChain)" % __class__.__name__)
         else:
             # Soc instance.
@@ -1586,8 +1586,7 @@ class MkidsSoc(Overlay, QickConfig):
             self['board'] = "ZCU216"
 
         # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
-        self.list_rf_blocks(
-            self.ip_dict['usp_rf_data_converter_0']['parameters'])
+        self.list_rf_blocks(self.ip_dict['usp_rf_data_converter_0']['parameters'])
 
         self.config_clocks(force_init_clks)
 
