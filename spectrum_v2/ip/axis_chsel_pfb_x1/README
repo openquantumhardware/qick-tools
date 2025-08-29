@@ -1,0 +1,8 @@
+Channel Selection IP for PFB multi-lane implementation (Simple version).
+
+This version is intended to be used when the FFT is the same as the number of lanes.
+This causes troubles in the most general block.
+
+The block is "always ready" at the input, and does not take into account
+the ready signal at the output master interface.
+

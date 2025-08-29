@@ -1,0 +1,8 @@
+Spectrum analyzer project which includes:
+* Full-spectrum with 16 Channels PFB, 16 FFTs of 16k each and Accumulator block.
+* Single PFB channel with buffer for time-domain signal plot.
+* Single PFB with DDS + CIC, with up-to 1000 times decimation and 64k FFT.
+
+Full-speed spectrum has a frequency resolution of about 15 kHz for the entire 2 GHz bandwidth.
+
+Single PFB spectrum has a frequency resolution from ~3 kHz down to ~ 3 Hz, depending on decimatino factor.
