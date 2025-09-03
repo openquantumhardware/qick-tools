@@ -2,6 +2,7 @@
   "schema": "xilinx.com:schema:json_instance:1.0",
   "ip_inst": {
     "xci_name": "fir_13",
+    "cell_name": "pfb_i/firs_i/fir14_i/fir_13",
     "component_reference": "xilinx.com:ip:fir_compiler:7.2",
     "ip_revision": "19",
     "gen_directory": "../../../../../top/top.tmp/axis_pfb_8x16_v1_v1_0_project/axis_pfb_8x16_v1_v1_0_project.gen/sources_1/ip/fir_13",
@@ -184,7 +185,7 @@
         "SELECTEDSIMMODEL": [ { "value": "" } ],
         "SHAREDDIR": [ { "value": "." } ],
         "SWVERSION": [ { "value": "2023.1" } ],
-        "SYNTHESISFLOW": [ { "value": "OUT_OF_CONTEXT" } ]
+        "SYNTHESISFLOW": [ { "value": "GLOBAL" } ]
       }
     },
     "boundary": {

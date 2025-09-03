@@ -1,8 +1,4 @@
 module pfb
-	#(
-		// Number of Lanes (Input).
-		parameter L = 8
-	)
 	(
 		// Reset and clock.
 		input					aresetn			,
@@ -22,6 +18,15 @@ module pfb
 		input	[31:0]			QOUT_REG
 	);
 
+/**************/
+/* Parameters */
+/**************/
+// Number of channels.
+parameter N = 16;
+
+// Number of Lanes (Input).
+parameter L = 8;
+
 /********************/
 /* Internal signals */
 /********************/
@@ -36,7 +41,7 @@ wire[2*L*32-1:0]	tdata_fft;
 /**********************/
 
 // Polyphase Filter Bank.
-firs
+firs 
 	#(
 		.L(L)
 	)
@@ -59,9 +64,9 @@ firs
 // SSR FFT 16x16.
 ssrfft_16x16
 	#(
-		.NFFT	(2*L),
-		.SSR	(2*L),
-		.B		(16	)
+		.NFFT	(N  ),
+		.SSR	(2*L ),
+		.B		(16	  )
 	)
     ssrfft_16x16_i
     (
@@ -88,7 +93,7 @@ pimod
 		// Number of bits.
 		.B(16	),
 		// FFT size.
-		.N(2*L	)
+		.N(N)
 	)
 	pimod_i
 	(

@@ -45,6 +45,8 @@ module axis_pfb_8x16_v1
 		output	[16*32-1:0]	m_axis_tdata
 	);
 
+// Parameters (should not be modified from outside).
+parameter N = 16;
 /********************/
 /* Internal signals */
 /********************/
@@ -98,6 +100,7 @@ axi_slv axi_slv_i
 // PFB Block.
 pfb
 	#(
+		.N	(N),
 		.L	(8	)
 	)
 	pfb_i
