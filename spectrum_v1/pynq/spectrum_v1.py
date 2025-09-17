@@ -198,7 +198,7 @@ class AxisChSelPfbx1(SocIp):
      CHID_REG
 
     """
-    bindto = ['user.org:user:axis_chsel_pfb_x1:1.0']
+    bindto = ['user.org:user:axis_chsel_pfb_x1:1.0','QICK:QICK:axis_chsel_pfb_x1:1.0']
     
     def __init__(self, description):
         # Initialize ip
@@ -290,7 +290,7 @@ class AxisBuffer(SocIp):
         return self.transfer()    
 
 class AxisDdsCicV3(SocIp):
-    bindto = ['user.org:user:axis_ddscic_v3:1.0']
+    bindto = ['user.org:user:axis_ddscic_v3:1.0','QICK:QICK:axis_ddscic_v3:1.0']
     
     # Decimation range.
     MIN_D       = 2
@@ -546,16 +546,194 @@ class Mixer:
         dac_block = dac_tile.blocks[dac]
         dac_block.NyquistZone = nz        
 
-class TopSoc(Overlay):    
-    # Constructor.
-    def __init__(self, bitfile=None, force_init_clks=False, ignore_version=True,  **kwargs):
-        # Load overlay (don't download to PL).
-        Overlay.__init__(self, bitfile, ignore_version=ignore_version, download=False, **kwargs)
-        
-        # Configuration dictionary.
-        self.cfg = {}
-        self.cfg['board'] = os.environ["BOARD"]
-        self.cfg['refclk_freq'] = 409.6        
+#class TopSoc(QickSoc):    
+#    # Constructor.
+#    def __init__(self, bitfile=None, force_init_clks=False, ignore_version=True,  **kwargs):
+#        # Load overlay (don't download to PL).
+#        Overlay.__init__(self, bitfile, ignore_version=ignore_version, download=False, **kwargs)
+#        
+#        # Configuration dictionary.
+#        self.cfg = {}
+#        self.cfg['board'] = os.environ["BOARD"]
+#        self.cfg['refclk_freq'] = 409.6        
+#
+#        # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
+#        self.list_rf_blocks(self.ip_dict['usp_rf_data_converter_0']['parameters'])
+#        
+#        # Configure PLLs if requested, or if any ADC/DAC is not locked.
+#        if force_init_clks:
+#            self.set_all_clks()
+#            self.download()
+#        else:
+#            self.download()        
+#        
+#        #################
+#        ### ADC Chain ###
+#        #################
+#        # PFB 8x16.
+#        self.pfb = self.axis_pfb_8x16_v1_0        
+#        self.pfb.configure(self.adcs['00']['fs']/2)
+#        print('Pasamos pfb_8x16...')
+#        
+#        # Accumulator 16x16384.
+#        self.acc_full = self.axis_accumulator_0
+#        self.acc_full.configure(self.axi_dma_0)
+#        print('Pasamos acc_0...')
+#        
+#        # Channel selection (PFB).
+#        self.chsel = self.axis_chsel_pfb_x1_0
+#        
+#        # Buffer (PFB).
+#        self.buff = self.axis_buffer_0
+#        self.buff.configure(self.axi_dma_1)        
+#
+#        # DDS + CIC. 
+#        self.ddscic = self.axis_ddscic_v3_0
+#        #self.ddscic.configure(self.pfb.get_fb())
+#        #print(self.cfg())
+#        self.ddscic.configure(self.pfb.dict['freq']['fb'])
+#
+#        # WXFFT 64k.
+#        self.fft = self.axis_wxfft_65536_0
+#        self.fft.configure(self.axi_dma_2)
+#        self.fft.window(wtype="hanning")
+#
+#        # Accumulator 1x65536
+#        self.acc_zoom = self.axis_accumulator_1
+#        self.acc_zoom.configure(self.axi_dma_2)
+#
+#        #################
+#        ### DAC Chain ###
+#        #################
+#        # Constant IQ.
+#        self.iq = self.axis_constant_iq_0
+#        
+#        # Mixer.
+#        self.mixer = Mixer(self.usp_rf_data_converter_0)
+#        
+#        #############################
+#        ### Initial Configuration ###
+#        #############################
+#        # PFB quantization.
+#        self.pfb.qout(3)
+#        
+#    def findPeak(self, x,y,xmin=-1,xmax=-1):
+#        if xmin == -1:
+#            xmin = np.min(x)        
+#        if xmax == -1:
+#            xmax = np.max(x)        
+#
+#        imin = np.argwhere(x <= xmin)
+#        imin = imin[-1].item()
+#        imax = np.argwhere(x >= xmax)
+#        imax = imax[0].item()
+#
+#        # Find max.
+#        idxmax = np.argmax(y[imin:imax]) + imin
+#
+#        # x, y.
+#        Xmax = x[idxmax].item()
+#        Ymax = y[idxmax].item()
+#
+#        return Xmax, Ymax        
+#    
+#    # Sort FFT data. Output FFT is bit-reversed. Index is given by idx array.
+#    def sort_br(self, x, idx):
+#        x_sort = np.zeros(len(x)) + 1j*np.zeros(len(x))
+#        for i in np.arange(len(x)):
+#            x_sort[idx[i]] = x[i]
+#
+#        return x_sort    
+#        
+#    def list_rf_blocks(self, rf_config):
+#        """
+#        Lists the enabled ADCs and DACs and get the sampling frequencies.
+#        XRFdc_CheckBlockEnabled in xrfdc_ap.c is not accessible from the Python interface to the XRFdc driver.
+#        This re-implements that functionality.
+#        """
+#
+#        hs_adc = rf_config['C_High_Speed_ADC']=='1'
+#
+#        self.dac_tiles = []
+#        self.adc_tiles = []
+#        dac_fabric_freqs = []
+#        adc_fabric_freqs = []
+#        refclk_freqs = []
+#        self.dacs = {}
+#        self.adcs = {}
+#
+#        for iTile in range(4):
+#            if rf_config['C_DAC%d_Enable'%(iTile)]!='1':
+#                continue
+#            self.dac_tiles.append(iTile)
+#            f_fabric = float(rf_config['C_DAC%d_Fabric_Freq'%(iTile)])
+#            f_refclk = float(rf_config['C_DAC%d_Refclk_Freq'%(iTile)])
+#            dac_fabric_freqs.append(f_fabric)
+#            refclk_freqs.append(f_refclk)
+#            fs = float(rf_config['C_DAC%d_Sampling_Rate'%(iTile)])*1000
+#            for iBlock in range(4):
+#                if rf_config['C_DAC_Slice%d%d_Enable'%(iTile,iBlock)]!='true':
+#                    continue
+#                self.dacs["%d%d"%(iTile,iBlock)] = {'fs':fs,
+#                                                    'f_fabric':f_fabric,
+#                                                    'tile':iTile,
+#                                                    'block':iBlock}
+#
+#        for iTile in range(4):
+#            if rf_config['C_ADC%d_Enable'%(iTile)]!='1':
+#                continue
+#            self.adc_tiles.append(iTile)
+#            f_fabric = float(rf_config['C_ADC%d_Fabric_Freq'%(iTile)])
+#            f_refclk = float(rf_config['C_ADC%d_Refclk_Freq'%(iTile)])
+#            adc_fabric_freqs.append(f_fabric)
+#            refclk_freqs.append(f_refclk)
+#            fs = float(rf_config['C_ADC%d_Sampling_Rate'%(iTile)])*1000
+#            #for iBlock,block in enumerate(tile.blocks):
+#            for iBlock in range(4):
+#                if hs_adc:
+#                    if iBlock>=2 or rf_config['C_ADC_Slice%d%d_Enable'%(iTile,2*iBlock)]!='true':
+#                        continue
+#                else:
+#                    if rf_config['C_ADC_Slice%d%d_Enable'%(iTile,iBlock)]!='true':
+#                        continue
+#                self.adcs["%d%d"%(iTile,iBlock)] = {'fs':fs,
+#                                                    'f_fabric':f_fabric,
+#                                                    'tile':iTile,
+#                                                    'block':iBlock}
+#
+#    def set_all_clks(self):
+#        """
+#        Resets all the board clocks
+#        """
+#        if self.cfg['board']=='ZCU111':
+#            print("resetting clocks:",self.cfg['refclk_freq'])
+#            xrfclk.set_all_ref_clks(self.cfg['refclk_freq'])
+#        elif self.cfg['board']=='ZCU216':
+#            lmk_freq = self.cfg['refclk_freq']
+#            lmx_freq = self.cfg['refclk_freq']*2
+#            print("resetting clocks:",lmk_freq, lmx_freq)
+#            xrfclk.set_ref_clks(lmk_freq=lmk_freq, lmx_freq=lmx_freq)
+
+class TopSoc(QickSoc):    
+
+    def __init__(self, bitfile=None, **kwargs):
+        super().__init__(bitfile=bitfile, **kwargs)
+
+        lines = []
+        lines = ["\nSPECTRUM configuration:\n"]
+        lines.append("\n\tBoard: " + self['board'])
+
+        # Analysis Chains.
+        if len(self['analysis']) > 0:
+            for i, chain in enumerate(self['analysis']):
+                adc_ = self['adcs'][chain['adc']['id']]
+                lines.append("\tAnalysis %d:" % (i))
+                lines.append("\t\tADC: %d_%d, fs = %.1f MHz, Decimation    = %d" %
+                             (224+int(chain['adc']['tile']), int(chain['adc']['ch']), adc_['fs'], adc_['decimation']))
+                lines.append("\t\tPFB: fs = %.1f MHz, fc = %.1f MHz, %d channels" %
+                             (chain['fs_ch'], chain['fc_ch'], chain['nch']))
+                #lines.append("\t\tXFFT
+        self['extra_description'].extend(lines)
 
         # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
         self.list_rf_blocks(self.ip_dict['usp_rf_data_converter_0']['parameters'])
@@ -589,7 +767,9 @@ class TopSoc(Overlay):
 
         # DDS + CIC. 
         self.ddscic = self.axis_ddscic_v3_0
-        self.ddscic.configure(self.pfb.get_fb())
+        #self.ddscic.configure(self.pfb.get_fb())
+        #print(self.cfg())
+        self.ddscic.configure(self.pfb.dict['freq']['fb'])
 
         # WXFFT 64k.
         self.fft = self.axis_wxfft_65536_0
@@ -614,34 +794,6 @@ class TopSoc(Overlay):
         #############################
         # PFB quantization.
         self.pfb.qout(3)
-        
-    def findPeak(self, x,y,xmin=-1,xmax=-1):
-        if xmin == -1:
-            xmin = np.min(x)        
-        if xmax == -1:
-            xmax = np.max(x)        
-
-        imin = np.argwhere(x <= xmin)
-        imin = imin[-1].item()
-        imax = np.argwhere(x >= xmax)
-        imax = imax[0].item()
-
-        # Find max.
-        idxmax = np.argmax(y[imin:imax]) + imin
-
-        # x, y.
-        Xmax = x[idxmax].item()
-        Ymax = y[idxmax].item()
-
-        return Xmax, Ymax        
-    
-    # Sort FFT data. Output FFT is bit-reversed. Index is given by idx array.
-    def sort_br(self, x, idx):
-        x_sort = np.zeros(len(x)) + 1j*np.zeros(len(x))
-        for i in np.arange(len(x)):
-            x_sort[idx[i]] = x[i]
-
-        return x_sort    
         
     def list_rf_blocks(self, rf_config):
         """
