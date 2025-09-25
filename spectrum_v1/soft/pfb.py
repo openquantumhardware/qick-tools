@@ -36,91 +36,44 @@ class AbsPfbAnalysis(SocIP):
         ##################################################
         ### Backward tracing: should finish at the ADC ###
         ##################################################
-        ((block,port),) = soc.metadata.trace_bus(self['fullpath'], self.STREAM_IN_PORT)
-        #block, port, blocktype = soc.metadata.trace_back(self['fullpath'], self.STREAM_IN_PORT, ["usp_rf_data_converter", "axis_combiner", "axis_broadcaster"])
+        block, port, blocktype = soc.metadata.trace_back(self['fullpath'], self.STREAM_IN_PORT, ["usp_rf_data_converter", "axis_combiner", "axis_broadcaster"])
 
         while True:
-            blocktype = soc.metadata.mod2type(block)
-
-            if blocktype == "usp_rf_data_converter":
-                if not self.HAS_ADC:
-                    self.HAS_ADC = True
-
-                    # port names are of the form 'm02_axis' where the block number is always even
-                    self.dict['adc'] = {'id': port[1:3]}
-
-                    """
-                    # Get ADC and tile.
-                    tile, adc_ch = self.ports2adc(port, None)
-
-                    # Fill adc data dictionary.
-                    id_ = str(tile) + str(adc_ch)
-                    self.dict['adc'] = {'tile' : tile, 'ch' : adc_ch, 'id' : id_}
-                    """
-                break
-            elif blocktype == "axis_combiner":
-                self.HAS_ADC = True
-                # Sanity check: combiner should have 2 slave ports.
-                nslave = int(soc.metadata.get_param(block, 'C_NUM_SI_SLOTS'))
-                if nslave != 2:
-                    raise RuntimeError("Block %s has %d S_AXIS inputs. It should have 2." % (block, nslave))
-
-                # for dual ADC (ZCU111, RFSoC4x2) the RFDC block has two outputs per ADC, which we combine - look at the first one
-                if blocktype == "axis_combiner":
-                    ((block, port),) = soc.metadata.trace_bus(block, 'S00_AXIS')
-                # port names are of the form 'm02_axis' where the block number is always even
-                self.dict['adc'] = {'id': port[1:3]}
-
-
-                """
-                # Trace the two interfaces.
-                ((block0, port0),) = soc.metadata.trace_bus(block, 'S00_AXIS')
-                ((block1, port1),) = soc.metadata.trace_bus(block, 'S01_AXIS')
-
-                # Get ADC and tile.
-                tile, adc_ch = self.ports2adc(port0, port1)
-
-                # Fill adc data dictionary.
-                id_ = str(tile) + str(adc_ch)
-                self.dict['adc'] = {'tile' : tile, 'ch' : adc_ch, 'id' : id_}
-
-                # Keep tracing back.
-                block = block0
-                port = port0
-                """
-                break
-            elif blocktype == "axis_broadcaster":
+            if blocktype == "axis_broadcaster":
                 # Forward tracing: should end at DMA.
+                if port != 'M00_AXIS':
+                    raise RuntimeError("expected PFB to be on M00_AXIS port of broadcaster, but it's on %s" % (port))
                 # Block/port for forward tracing second broadcaster port.
-                ((block_fwd, port_fwd),) = soc.metadata.trace_bus(block, 'M01_AXIS')
-                blocktype = soc.metadata.mod2type(block_fwd)
-
-                if blocktype != "mr_buffer_et":
-                    raise RuntimeError("expected to find mr_buffer_et in forward trace, found %s instead", blocktype)
-                self.HAS_BUFF_ADC = True
+                block_fwd, port_fwd, _ = soc.metadata.trace_forward(block, 'M01_AXIS', ["mr_buffer_et"])
 
                 # Add block into dictionary.
+                self.HAS_BUFF_ADC = True
                 self.dict['buff_adc'] = block_fwd
                 self.buff_adc = soc._get_block(block_fwd)
 
                 # Trace port.
-                ((block_fwd, port_fwd),) = soc.metadata.trace_bus(block_fwd, 'm00_axis')
-                blocktype = soc.metadata.mod2type(block_fwd)
-                if blocktype != "axi_dma":
-                    raise RuntimeError("expected to find axi_dma in forward trace, found %s instead", blocktype)
+                block_fwd, port_fwd, _ = soc.metadata.trace_forward(block_fwd, 'm00_axis', ["axi_dma"])
+
                 # Add dma into dictionary.
                 self.dict['buff_adc_dma'] = block_fwd
                 self.buff_adc_dma = soc._get_block(block_fwd)
 
                 # Normal block/port to continue with backwards trace.
-                ((block, port),) = soc.metadata.trace_bus(block, 'S_AXIS')
-
-            elif blocktype == "axis_register_slice":
-                ((block, port),) = soc.metadata.trace_bus(block, 'S_AXIS')
-            elif blocktype == "axis_reorder_iq_v1":
-                ((block, port),) = soc.metadata.trace_bus(block, 's_axis')
+                block, port, blocktype = soc.metadata.trace_back(block, 'S_AXIS', ["usp_rf_data_converter", "axis_combiner"])
             else:
-                raise RuntimeError("falied to trace port for %s - unrecognized IP block %s" % (self['fullpath'], block))
+                if blocktype == "axis_combiner":
+                    # Sanity check: combiner should have 2 slave ports.
+                    nslave = int(soc.metadata.get_param(block, 'C_NUM_SI_SLOTS'))
+                    if nslave != 2:
+                        raise RuntimeError("Block %s has %d S_AXIS inputs. It should have 2." % (block, nslave))
+
+                    # for dual ADC (ZCU111, RFSoC4x2) the RFDC block has two outputs per ADC, which we combine - look at the first one
+                    ((block, port),) = soc.metadata.trace_bus(block, 'S00_AXIS')
+
+                self.HAS_ADC = True
+                # port names are of the form 'm02_axis'
+                self.dict['adc'] = {'id': port[1:3]}
+                break
 
         #################################################
         ### Forward tracing: should finish at the DMA ###

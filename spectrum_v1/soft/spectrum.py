@@ -426,19 +426,6 @@ class SpectrumSoc(QickSoc):
     def map_signal_paths(self, no_tproc):
         super().map_signal_paths(no_tproc)
 
-        if no_tproc:
-            # Use the HWH parser to trace connectivity and deduce the channel numbering.
-            for key, val in self.ip_dict.items():
-                if hasattr(val['driver'], 'configure_connections'):
-                    getattr(self, key).configure_connections(self)
-            # IQ Constants.
-            self.iqs = []
-            iqs_drivers = set([AxisConstantIQ])
-            # Populate the lists with the registered IP blocks.
-            for key, val in self.ip_dict.items():
-                if val['driver'] in iqs_drivers:
-                    self.iqs.append(getattr(self, key))
-
         # PFB for Analysis.
         self.pfbs_in = []
         pfbs_in_drivers = set([AxisPfbAnalysis])
