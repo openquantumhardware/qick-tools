@@ -37,6 +37,7 @@ class AbsPfbAnalysis(SocIP):
         ### Backward tracing: should finish at the ADC ###
         ##################################################
         ((block,port),) = soc.metadata.trace_bus(self['fullpath'], self.STREAM_IN_PORT)
+        #block, port, blocktype = soc.metadata.trace_back(self['fullpath'], self.STREAM_IN_PORT, ["usp_rf_data_converter", "axis_combiner", "axis_broadcaster"])
 
         while True:
             blocktype = soc.metadata.mod2type(block)
@@ -45,49 +46,33 @@ class AbsPfbAnalysis(SocIP):
                 if not self.HAS_ADC:
                     self.HAS_ADC = True
 
+                    # port names are of the form 'm02_axis' where the block number is always even
+                    self.dict['adc'] = {'id': port[1:3]}
+
+                    """
                     # Get ADC and tile.
                     tile, adc_ch = self.ports2adc(port, None)
 
                     # Fill adc data dictionary.
                     id_ = str(tile) + str(adc_ch)
                     self.dict['adc'] = {'tile' : tile, 'ch' : adc_ch, 'id' : id_}
+                    """
                 break
-            elif blocktype == "axis_broadcaster":
-                # Block/port for forward tracing second broadcaster port.
-                ((block_tmp, port_tmp),) = soc.metadata.trace_bus(block, 'M01_AXIS')
-
-                # Normal block/port to continue with backwards trace.
-                ((block, port),) = soc.metadata.trace_bus(block, 'S_AXIS')
-
-                # Forward tracing: should end at DMA.
-                while True:
-                    blocktype = soc.metadata.mod2type(block_tmp)
-
-                    if blocktype == "mr_buffer_et":
-                        self.HAS_BUFF_ADC = True
-
-                        # Add block into dictionary.
-                        self.dict['buff_adc'] = block_tmp
-
-                        # Trace port.
-                        ((block_tmp, port_tmp),) = soc.metadata.trace_bus(block_tmp, 'm00_axis')
-                    elif blocktype == "axi_dma":
-                        # Add dma into dictionary.
-                        self.dict['buff_adc_dma'] = block_tmp
-                        break
-
-            elif blocktype == "axis_register_slice":
-                ((block, port),) = soc.metadata.trace_bus(block, 'S_AXIS')
-            elif blocktype == "axis_reorder_iq_v1":
-                ((block, port),) = soc.metadata.trace_bus(block, 's_axis')
             elif blocktype == "axis_combiner":
                 self.HAS_ADC = True
                 # Sanity check: combiner should have 2 slave ports.
                 nslave = int(soc.metadata.get_param(block, 'C_NUM_SI_SLOTS'))
-
                 if nslave != 2:
                     raise RuntimeError("Block %s has %d S_AXIS inputs. It should have 2." % (block, nslave))
 
+                # for dual ADC (ZCU111, RFSoC4x2) the RFDC block has two outputs per ADC, which we combine - look at the first one
+                if blocktype == "axis_combiner":
+                    ((block, port),) = soc.metadata.trace_bus(block, 'S00_AXIS')
+                # port names are of the form 'm02_axis' where the block number is always even
+                self.dict['adc'] = {'id': port[1:3]}
+
+
+                """
                 # Trace the two interfaces.
                 ((block0, port0),) = soc.metadata.trace_bus(block, 'S00_AXIS')
                 ((block1, port1),) = soc.metadata.trace_bus(block, 'S01_AXIS')
@@ -102,7 +87,38 @@ class AbsPfbAnalysis(SocIP):
                 # Keep tracing back.
                 block = block0
                 port = port0
+                """
                 break
+            elif blocktype == "axis_broadcaster":
+                # Forward tracing: should end at DMA.
+                # Block/port for forward tracing second broadcaster port.
+                ((block_fwd, port_fwd),) = soc.metadata.trace_bus(block, 'M01_AXIS')
+                blocktype = soc.metadata.mod2type(block_fwd)
+
+                if blocktype != "mr_buffer_et":
+                    raise RuntimeError("expected to find mr_buffer_et in forward trace, found %s instead", blocktype)
+                self.HAS_BUFF_ADC = True
+
+                # Add block into dictionary.
+                self.dict['buff_adc'] = block_fwd
+                self.buff_adc = soc._get_block(block_fwd)
+
+                # Trace port.
+                ((block_fwd, port_fwd),) = soc.metadata.trace_bus(block_fwd, 'm00_axis')
+                blocktype = soc.metadata.mod2type(block_fwd)
+                if blocktype != "axi_dma":
+                    raise RuntimeError("expected to find axi_dma in forward trace, found %s instead", blocktype)
+                # Add dma into dictionary.
+                self.dict['buff_adc_dma'] = block_fwd
+                self.buff_adc_dma = soc._get_block(block_fwd)
+
+                # Normal block/port to continue with backwards trace.
+                ((block, port),) = soc.metadata.trace_bus(block, 'S_AXIS')
+
+            elif blocktype == "axis_register_slice":
+                ((block, port),) = soc.metadata.trace_bus(block, 'S_AXIS')
+            elif blocktype == "axis_reorder_iq_v1":
+                ((block, port),) = soc.metadata.trace_bus(block, 's_axis')
             else:
                 raise RuntimeError("falied to trace port for %s - unrecognized IP block %s" % (self['fullpath'], block))
 
@@ -168,7 +184,7 @@ class AbsPfbAnalysis(SocIP):
 
                                 # Trace port.
                                 ((block_tmp2, port_tmp2),) = soc.metadata.trace_bus(block_tmp2,'m_axis_data')
-                            elif blocktype == "axis_accumulator_v1" or blocktype == "axis_accumulator":
+                            elif blocktype in ["axis_accumulator_v1", "axis_accumulator"]:
                                 self.HAS_ACC_ZOOM = True
 
                                 # Add block into dictionary.
@@ -184,7 +200,7 @@ class AbsPfbAnalysis(SocIP):
                                 block_tmp = block2
                                 break
                     #elif blocktype == "axis_buffer_v1" or (blocktype == "axis_buffer_uram_v1" and block2 != None): 
-                    elif blocktype == "axis_buffer_v1" or blocktype == "axis_buffer":
+                    elif blocktype in ["axis_buffer_v1", "axis_buffer"]:
                         self.HAS_BUFF_PFB = True
 
                         # Add block into dictionary.
@@ -229,14 +245,14 @@ class AbsPfbAnalysis(SocIP):
             elif blocktype == "axis_clock_converter":
                 # Trace port.
                 ((block, port),) = soc.metadata.trace_bus(block, 'M_AXIS')
-            elif blocktype == "axis_xfft_16x16384" or blocktype == "axis_xfft_16x32768":
+            elif blocktype in ["axis_xfft_16x16384", "axis_xfft_16x32768"]:
                 self.HAS_XFFT = True
 
                 # Add block into dictionary.
                 self.dict['xfft'] = block
 
                 ((block, port),) = soc.metadata.trace_bus(block, 'm_axis')
-            elif blocktype == "axis_accumulator_v1" or blocktype == "axis_accumulator":
+            elif blocktype in ["axis_accumulator_v1", "axis_accumulator"]:
                 self.HAS_ACC_XFFT = True
 
                 # Add block into dictionary.

@@ -415,8 +415,9 @@ class SpectrumSoc(QickSoc):
             for i, chain in enumerate(self['analysis']):
                 adc_ = self['rf']['adcs'][chain['adc']['id']]
                 lines.append("\tAnalysis %d:" % (i))
-                lines.append("\t\tADC: %d_%d, fs = %.1f MHz, Decimation    = %d" %
-                             (224+int(chain['adc']['tile']), int(chain['adc']['ch']), adc_['fs'], adc_['decimation']))
+                lines.append("\t\t%s" % (self._describe_adc(chain['adc']['id'])))
+                lines.append("\t\tfs = %.1f MHz, Decimation    = %d" %
+                             (adc_['fs'], adc_['decimation']))
                 lines.append("\t\tPFB: fs = %.1f MHz, fc = %.1f MHz, %d channels" %
                              (chain['fs_ch'], chain['fc_ch'], chain['nch']))
                 #lines.append("\t\tXFFT
