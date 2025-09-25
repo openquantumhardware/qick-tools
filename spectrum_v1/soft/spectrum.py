@@ -78,19 +78,17 @@ class AnalysisChain():
                 pfb = getattr(self.soc, self.dict['chain']['pfb'])
 
     def update_settings(self):
-        tile = int(self.dict['chain']['adc']['tile'])
-        ch = int(self.dict['chain']['adc']['ch'])
-        m_set = self.soc.rf.adc_tiles[tile].blocks[ch].MixerSettings
+        m_set = self.soc.get_mixer_state(self.dict['chain']['adc']['id'], 'adc')
         self.dict['mixer'] = {
-            'mode'     : self.return_key(self.mixer_dict['mode'], m_set['MixerMode']),
+            #'mode'     : self.return_key(self.mixer_dict['mode'], m_set['MixerMode']),
             'type'     : self.return_key(self.mixer_dict['type'], m_set['MixerType']),
-            'evnt_src' : self.return_key(self.event_dict['source'], m_set['EventSource']),
-            'freq'     : m_set['Freq'],
+            #'evnt_src' : self.return_key(self.event_dict['source'], m_set['EventSource']),
         }
         
         # Check type.
         if self.dict['mixer']['type'] == 'fine':
             self.dict['mixer']['freq'] = m_set['Freq']
+            self.dict['mixer']['freq'] = self.soc.get_mixer_freq_direct(self.dict['chain']['adc']['id'], 'adc')
         elif self.dict['mixer']['type'] == 'coarse':
             type_c = self.return_key(self.coarse_dict, m_set['CoarseMixFreq'])
             fs_adc = self.soc['rf']['adcs'][self.dict['chain']['adc']['id']]['fs']
@@ -105,17 +103,12 @@ class AnalysisChain():
 
             self.dict['mixer']['freq'] = freq
 
-        self.dict['nqz'] = self.soc.rf.adc_tiles[tile].blocks[ch].NyquistZone        
+        self.dict['nqz'] = self.soc.get_nyquist(self.dict['chain']['adc']['id'], 'adc')
         
     def set_mixer_frequency(self, f):
-        if self.dict['mixer']['type'] != 'fine':
-            raise RuntimeError("Mixer not active")
-        else:            
-            # Set Mixer with RFDC driver.
-            self.soc.rf.set_mixer_freq(self.dict['chain']['adc']['id'], f, 'adc')
-            
-            # Update local copy of frequency value.
-            self.update_settings()
+        self.soc.set_mixer_freq_direct(self.dict['chain']['adc']['id'], f, 'adc')
+        # Update local copy of frequency value.
+        self.dict['mixer']['freq'] = self.soc.get_mixer_freq_direct(self.dict['chain']['adc']['id'], 'adc')
             
     def get_mixer_frequency(self):
         return self.dict['mixer']['freq']
@@ -325,32 +318,25 @@ class SynthesisChain():
                 # Synthesis chain.
                 self.dict['chain'] = chain
 
-                # Update settings.
-                self.update_settings()
+                ## Update settings.
+                #self.update_settings()
 
+    """
     def update_settings(self):
-        tile, ch = [int(x) for x in self.dict['chain']['dac']]
-        #tile = int(self.dict['chain']['dac']['tile'])
-        #ch = int(self.dict['chain']['dac']['ch'])
-        m_set = self.soc.rf.dac_tiles[tile].blocks[ch].MixerSettings
+        m_set = self.soc.get_mixer_state(self.dict['chain']['dac']['id'], 'dac')
         self.dict['mixer'] = {
-            'mode'     : self.return_key(self.mixer_dict['mode'], m_set['MixerMode']),
+            #'mode'     : self.return_key(self.mixer_dict['mode'], m_set['MixerMode']),
             'type'     : self.return_key(self.mixer_dict['type'], m_set['MixerType']),
-            'evnt_src' : self.return_key(self.event_dict['source'], m_set['EventSource']),
-            'freq'     : m_set['Freq'],
+            #'evnt_src' : self.return_key(self.event_dict['source'], m_set['EventSource']),
         }
         
-        self.dict['nqz'] = self.soc.rf.dac_tiles[tile].blocks[ch].NyquistZone        
+        self.dict['mixer']['freq'] = self.soc.get_mixer_freq_direct(self.dict['chain']['dac'], 'dac')
+        self.dict['nqz'] = self.soc.get_nyquist(self.dict['chain']['dac'], 'dac')
         
     def set_mixer_frequency(self, f):
-        if self.dict['mixer']['type'] != 'fine':
-            raise RuntimeError("Mixer not active")
-        else:            
-            # Set Mixer with RFDC driver.
-            self.soc.rf.set_mixer_freq(self.dict['chain']['dac'], f, 'dac')
-            
-            # Update local copy of frequency value.
-            self.update_settings()
+        self.soc.set_mixer_freq_direct(self.dict['chain']['dac'], f, 'dac')
+        # Update local copy of frequency value.
+        self.dict['mixer']['freq'] = self.soc.get_mixer_freq_direct(self.dict['chain']['dac'], 'dac')
             
     def get_mixer_frequency(self):
         return self.soc.rf.get_mixer_freq(self.dict['chain']['dac'],'dac')
@@ -360,17 +346,11 @@ class SynthesisChain():
             if value==val:
                 return key
         return('Key Not Found')
+    """
 
     # Set single output.
     def set_tone(self, f=0, g=0.99, verbose=False):
-        # Get blocks.
-        iq_b = getattr(self.soc, self.dict['chain']['iq'])
-
-        # Set mixer frequency.
-        self.set_mixer_frequency(f)
-
-        # Set IQ constant amplitude.
-        iq_b.set_iq(i=g, q=g)
+        self.soc.set_iq(ch=self.dict['chain']['iq'], f=f, i=g, q=g)
 
 class DualChain():
     # Constructor.
@@ -465,7 +445,7 @@ class SpectrumSoc(QickSoc):
             if val['driver'] in pfbs_in_drivers:
                 self.pfbs_in.append(getattr(self, key))
 
-        self.pfb    = self.axis_pfb_8x16_v1_0
+        #self.pfb    = self.axis_pfb_8x16_v1_0
 
         # Configure the drivers.
         for pfb in self.pfbs_in:
@@ -545,11 +525,22 @@ class SpectrumSoc(QickSoc):
             self['analysis'].append(thiscfg)
 
         # IQ Constant based synthesis.
-        for iq in self.iqs:
+        for i, iq in enumerate(self.iqs):
             thiscfg = {}
             thiscfg['type'] = 'synthesis'
-            thiscfg['iq']   = iq['fullpath']
+            thiscfg['iq']   = i
             thiscfg['dac']  = iq['dac']
 
             self['synthesis'].append(thiscfg)
 
+    def set_mixer_freq_direct(self, blockname, f, blocktype='dac'):
+        self.rf.set_mixer_freq(blockname, f, blocktype)
+
+    def get_mixer_freq_direct(self, blockname, blocktype='dac'):
+        return self.rf.get_mixer_freq(blockname, blocktype)
+
+    def get_nyquist(self, blockname, blocktype='dac'):
+        return self.rf.get_nyquist(blockname, blocktype)
+
+    def get_mixer_state(self, blockname, blocktype='dac'):
+        return self.rf._get_block(blocktype, blockname).MixerSettings.copy()
