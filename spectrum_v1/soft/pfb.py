@@ -1,6 +1,13 @@
 import numpy as np
 from qick.ip import SocIP
-from fft_helpers import sort_br
+
+# Sort FFT data. Output FFT is bit-reversed. Index is given by idx array.
+def sort_br(x, idx):
+    x_sort = np.zeros(len(x)) + 1j*np.zeros(len(x))
+    for i in np.arange(len(x)):
+        x_sort[idx[i]] = x[i]
+
+    return x_sort
 
 class AbsPfbAnalysis(SocIP):
     # Trace parameters.
