@@ -144,6 +144,71 @@ class AbsPfbAnalysis(SocIP):
                         self.HAS_DMA = True
                         self.dict['dma'] = block
 
+        # Mixer dictionary.
+        source_dict = {
+            0: 'immediate',
+            1: 'slice',
+            2: 'tile',
+            3: 'sysref',
+            4: 'marker',
+            5: 'pl',
+        }
+        mode_dict = {
+                0: 'off',
+                1: 'complex2complex',
+                2: 'complex2real',
+                3: 'real2ccomplex',
+                4: 'real2real',
+            }
+        type_dict = {
+                1: 'coarse',
+                2: 'fine',
+                3: 'off',
+            }
+        # Coarse Mixer Dictionary.
+        coarse_dict = {
+                0 : 'off',
+                2 : 'fs_div_2',
+                4 : 'fs_div_4',
+                8 : 'mfs_div_4',
+                16: 'bypass',
+                }
+
+        m_set = self.soc.rf._get_block('adc', self.dict['adc']['id']).MixerSettings.copy()
+        self.dict['mixer'] = {
+            #'mode'     : mode_dict[m_set['MixerMode']],
+            'type'     : type_dict[m_set['MixerType']],
+            #'evnt_src' : source_dict[m_set['EventSource']],
+        }
+
+        # Check type.
+        if self.dict['mixer']['type'] == 'fine':
+            self.dict['mixer']['freq'] = self.soc.rf.get_mixer_freq(self.dict['adc']['id'], 'adc')
+        elif self.dict['mixer']['type'] == 'coarse':
+            type_c = coarse_dict[m_set['CoarseMixFreq']]
+            fs_adc = self.soc['rf']['adcs'][self.dict['adc']['id']]['fs']
+            if type_c == 'fs_div_2':
+                freq = fs_adc/2
+            elif type_c == 'fs_div_4':
+                freq = fs_adc/4
+            elif type_c == 'mfs_div_4':
+                freq = -fs_adc/4
+            else:
+                raise ValueError("Mixer CoarseMode %s not recognized" % (type_c))
+
+            self.dict['mixer']['freq'] = freq
+
+        self.dict['nqz'] = self.soc.rf.get_nyquist(self.dict['adc']['id'], 'adc')
+
+    def set_mixer_freq(self, f):
+        self.soc.rf.set_mixer_freq(self.dict['adc']['id'], f, 'adc')
+
+    def get_mixer_freq(self):
+        if self.dict['mixer']['type'] == 'coarse':
+            return self.dict['mixer']['freq']
+        else:
+            return sself.soc.rf.get_mixer_freq(self.dict['adc']['id'], 'adc')
+
     def freq2ch(self,f):
         """
         Convert from frequency to PFB channel number
@@ -236,46 +301,44 @@ class AbsPfbAnalysis(SocIP):
         self.buff_adc.enable()
         return self.buff_adc.transfer().T
 
-    def get_bin_pfb(self, f, fmix, verbose=False):
+    def get_bin_pfb(self, f, verbose=False):
         # Sanity check: is frequency on allowed range?
         fs = self.dict['freq']['fs']
-        if (fmix-fs/2) < f < (fmix+fs/2):
-            f_ = f - fmix
-            k = self.freq2ch(f_)
-
-            # Un-mask channel.
-            self.buff_xfft_chsel.set(k)
-
-            if verbose:
-                print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
-
-            # Get data.
-            return self.buff_pfb.get_data()
-
-        else:
+        fmix = abs(self.get_mixer_freq())
+        if np.abs(f - fmix) > fs/2:
             raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+        f_ = f - fmix
+        k = self.freq2ch(f_)
 
-    def get_bin_xfft(self, f, fmix, verbose=False):
+        # Un-mask channel.
+        self.buff_xfft_chsel.set(k)
+
+        if verbose:
+            print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
+
+        # Get data.
+        return self.buff_pfb.get_data()
+
+    def get_bin_xfft(self, f, verbose=False):
         # Sanity check: is frequency on allowed range?
         fs = self.dict['freq']['fs']
-        if (fmix-fs/2) < f < (fmix+fs/2):
-            f_ = f - fmix
-            k = self.freq2ch(f_)
-
-            # Un-mask channel.
-            self.buff_xfft_chsel.set(k)
-
-            if verbose:
-                print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
-
-            # Get data.
-            [xi,xq,idx] = self.buff_xfft.get_data()
-            x = xi + 1j*xq
-            x = sort_br(x,idx)
-            return x.real,x.imag
-
-        else:
+        fmix = abs(self.get_mixer_freq())
+        if np.abs(f - fmix) > fs/2:
             raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+        f_ = f - fmix
+        k = self.freq2ch(f_)
+
+        # Un-mask channel.
+        self.buff_xfft_chsel.set(k)
+
+        if verbose:
+            print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
+
+        # Get data.
+        [xi,xq,idx] = self.buff_xfft.get_data()
+        x = xi + 1j*xq
+        x = sort_br(x,idx)
+        return x.real,x.imag
 
     def get_data_acc(self, N, verbose=False):
         x = self.acc_xfft.single_shot(N=N)

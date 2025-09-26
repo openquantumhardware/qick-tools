@@ -7,51 +7,6 @@ import numpy as np
 
 
 class AnalysisChain():
-    # Event dictionary.
-    event_dict = {
-        'source' :
-        {
-            'immediate' : 0,
-            'slice' : 1,
-            'tile' : 2,
-            'sysref' : 3,
-            'marker' : 4,
-            'pl' : 5,
-        },
-        'event' :
-        {
-            'mixer' : 1,
-            'coarse_delay' : 2,
-            'qmc' : 3,
-        },
-    }
-    
-    # Coarse Mixer Dictionary.
-    coarse_dict = {
-            'off' : 0,
-            'fs_div_2' : 2,
-            'fs_div_4' : 4,
-            'mfs_div_4' : 8,
-            'bypass' : 16
-            }
-
-    # Mixer dictionary.
-    mixer_dict = {
-        'mode' : 
-        {
-            'off' : 0,
-            'complex2complex' : 1,
-            'complex2real' : 2,
-            'real2ccomplex' : 3,
-            'real2real' : 4,
-        },
-        'type' :
-        {
-            'coarse' : 1,
-            'fine' : 2,
-            'off' : 3,
-        }}
-    
     # Constructor.
     def __init__(self, soc, chain):
         # Sanity check. Is soc the right type?
@@ -71,54 +26,17 @@ class AnalysisChain():
                 # Analysis chain.
                 self.dict['chain'] = chain
 
-                # Update settings.
-                self.update_settings()
-                    
                 # pfb block.
                 pfb = getattr(self.soc, self.dict['chain']['pfb'])
 
-    def update_settings(self):
-        m_set = self.soc.get_mixer_state(self.dict['chain']['adc']['id'], 'adc')
-        self.dict['mixer'] = {
-            #'mode'     : self.return_key(self.mixer_dict['mode'], m_set['MixerMode']),
-            'type'     : self.return_key(self.mixer_dict['type'], m_set['MixerType']),
-            #'evnt_src' : self.return_key(self.event_dict['source'], m_set['EventSource']),
-        }
-        
-        # Check type.
-        if self.dict['mixer']['type'] == 'fine':
-            self.dict['mixer']['freq'] = m_set['Freq']
-            self.dict['mixer']['freq'] = self.soc.get_mixer_freq_direct(self.dict['chain']['adc']['id'], 'adc')
-        elif self.dict['mixer']['type'] == 'coarse':
-            type_c = self.return_key(self.coarse_dict, m_set['CoarseMixFreq'])
-            fs_adc = self.soc['rf']['adcs'][self.dict['chain']['adc']['id']]['fs']
-            if type_c == 'fs_div_2':
-                freq = fs_adc/2
-            elif type_c == 'fs_div_4':
-                freq = fs_adc/4
-            elif type_c == 'mfs_div_4':
-                freq = -fs_adc/4
-            else:
-                raise ValueError("Mixer CoarseMode %s not recognized" % (type_c))
-
-            self.dict['mixer']['freq'] = freq
-
-        self.dict['nqz'] = self.soc.get_nyquist(self.dict['chain']['adc']['id'], 'adc')
-        
     def set_mixer_frequency(self, f):
-        self.soc.set_mixer_freq_direct(self.dict['chain']['adc']['id'], f, 'adc')
-        # Update local copy of frequency value.
-        self.dict['mixer']['freq'] = self.soc.get_mixer_freq_direct(self.dict['chain']['adc']['id'], 'adc')
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
+        pfb.set_mixer_freq(f)
             
     def get_mixer_frequency(self):
-        return self.dict['mixer']['freq']
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
+        return pfb.get_mixer_freq()
         
-    def return_key(self,dictionary,val):
-        for key, value in dictionary.items():
-            if value==val:
-                return key
-        return('Key Not Found')
-
     def get_data_adc(self, verbose=False):
         pfb = getattr(self.soc, self.dict['chain']['pfb'])
         return pfb.get_data_adc(verbose)
@@ -136,8 +54,7 @@ class AnalysisChain():
         :rtype:[array,array]
         """
         pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        fmix = abs(self.dict['mixer']['freq'])
-        return pfb.get_bin_pfb(f, fmix, verbose)
+        return pfb.get_bin_pfb(f, verbose)
 
     def get_bin_xfft(self, f=0, verbose=False):
         """
@@ -151,8 +68,7 @@ class AnalysisChain():
         :rtype:[array,array]
         """
         pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        fmix = abs(self.dict['mixer']['freq'])
-        return pfb.get_bin_xfft(f, fmix, verbose)
+        return pfb.get_bin_xfft(f, verbose)
 
     def get_data_acc(self, N=1, verbose=False):
         pfb = getattr(self.soc, self.dict['chain']['pfb'])
@@ -164,25 +80,25 @@ class AnalysisChain():
 
     def freq2ch(self, f):
         # Get blocks.
-        pfb_b = getattr(self.soc, self.dict['chain']['pfb'])
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
         
         # Sanity check: is frequency on allowed range?
-        fmix = abs(self.dict['mixer']['freq'])
+        fmix = abs(pfb.get_mixer_freq())
         fs = self.dict['chain']['fs']
         
         if (fmix-fs/2) < f < (fmix+fs/2):
             f_ = f - fmix
-            return pfb_b.freq2ch(f_)
+            return pfb.freq2ch(f_)
         else:
             raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
 
     def ch2freq(self, ch):
         # Get blocks.
-        pfb_b = getattr(self.soc, self.dict['chain']['pfb'])
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
 
         # Mixer frequency.
-        fmix = abs(self.dict['mixer']['freq'])
-        f = pfb_b.ch2freq(ch) 
+        fmix = abs(pfb.get_mixer_freq())
+        f = pfb.ch2freq(ch)
         
         return f+fmix
     
@@ -464,15 +380,3 @@ class SpectrumSoc(QickSoc):
             thiscfg['dac']  = iq['dac']
 
             self['synthesis'].append(thiscfg)
-
-    def set_mixer_freq_direct(self, blockname, f, blocktype='dac'):
-        self.rf.set_mixer_freq(blockname, f, blocktype)
-
-    def get_mixer_freq_direct(self, blockname, blocktype='dac'):
-        return self.rf.get_mixer_freq(blockname, blocktype)
-
-    def get_nyquist(self, blockname, blocktype='dac'):
-        return self.rf.get_nyquist(blockname, blocktype)
-
-    def get_mixer_state(self, blockname, blocktype='dac'):
-        return self.rf._get_block(blocktype, blockname).MixerSettings.copy()
