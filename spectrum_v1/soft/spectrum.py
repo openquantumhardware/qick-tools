@@ -10,36 +10,32 @@ class AnalysisChain():
     # Constructor.
     def __init__(self, soc, chain):
         # Sanity check. Is soc the right type?
-        if not isinstance(soc, SpectrumSoc):
-            raise RuntimeError("%s (SpectrumSoc, AnalysisChain)" % __class__.__name__)
+        #if not isinstance(soc, SpectrumSoc):
+        #    raise RuntimeError("%s (SpectrumSoc, AnalysisChain)" % __class__.__name__)
+
+        # Soc instance.
+        self.soc = soc
+
+        # Sanity check. Is this a sythesis chain?
+        if chain['type'] != 'analysis':
+            raise RuntimeError("An \'analysis\' chain must be provided")
         else:
-            # Soc instance.
-            self.soc = soc
-            
-            # Sanity check. Is this a sythesis chain?
-            if chain['type'] != 'analysis':
-                raise RuntimeError("An \'analysis\' chain must be provided")
-            else:
-                # Dictionary.
-                self.dict = {}
+            # Dictionary.
+            self.dict = {}
 
-                # Analysis chain.
-                self.dict['chain'] = chain
+            # Analysis chain.
+            self.dict['chain'] = chain
 
-                # pfb block.
-                pfb = getattr(self.soc, self.dict['chain']['pfb'])
+            self.ch = chain['ch']
 
     def set_mixer_frequency(self, f):
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        pfb.set_mixer_freq(f)
-            
+        self.soc.ana_set_mixer_freq(self.ch, f)
+
     def get_mixer_frequency(self):
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        return pfb.get_mixer_freq()
-        
+        return self.soc.ana_get_mixer_freq(self.ch)
+
     def get_data_adc(self, verbose=False):
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        return pfb.get_data_adc(verbose)
+        return self.soc.ana_get_data_adc(self.ch, verbose)
 
     def get_bin_pfb(self, f=0, verbose=False):
         """
@@ -53,8 +49,7 @@ class AnalysisChain():
         :return: [i,q] data from the channel.
         :rtype:[array,array]
         """
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        return pfb.get_bin_pfb(f, verbose)
+        return self.soc.ana_get_bin_pfb(self.ch, f, verbose)
 
     def get_bin_xfft(self, f=0, verbose=False):
         """
@@ -67,44 +62,22 @@ class AnalysisChain():
         :return: [i,q] data from the channel.
         :rtype:[array,array]
         """
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        return pfb.get_bin_xfft(f, verbose)
+        return self.soc.ana_get_bin_xfft(self.ch, f, verbose)
 
     def get_data_acc(self, N=1, verbose=False):
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        return pfb.get_data_acc(N, verbose)
+        return self.soc.ana_get_data_acc(self.ch, N, verbose)
 
     def get_data_acc_zoom(self, N=1, verbose=False):
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        return pfb.get_data_acc_zoom(N, verbose)
+        return self.soc.ana_get_data_zoom(self.ch, N, verbose)
 
     def freq2ch(self, f):
-        # Get blocks.
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        
-        # Sanity check: is frequency on allowed range?
-        fmix = abs(pfb.get_mixer_freq())
-        fs = self.dict['chain']['fs']
-        
-        if (fmix-fs/2) < f < (fmix+fs/2):
-            f_ = f - fmix
-            return pfb.freq2ch(f_)
-        else:
-            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+        return self.soc.ana_freq2ch(self.ch, f)
 
     def ch2freq(self, ch):
-        # Get blocks.
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-
-        # Mixer frequency.
-        fmix = abs(pfb.get_mixer_freq())
-        f = pfb.ch2freq(ch)
-        
-        return f+fmix
+        return self.soc.ana_ch2freq(self.ch, ch)
     
     def qout(self,q):
-        pfb = getattr(self.soc, self.dict['chain']['pfb'])
-        pfb.qout(q)
+        self.soc.ana_qout(self.ch, q)
         
     @property
     def fs(self):
@@ -164,22 +137,19 @@ class SynthesisChain():
         # Sanity check. Is soc the right type?
         if not isinstance(soc, SpectrumSoc):
             raise RuntimeError("%s (SpectrumSoc, SynthesisChain)" % __class__.__name__)
+
+        # Soc instance.
+        self.soc = soc
+
+        # Sanity check. Is this a sythesis chain?
+        if chain['type'] != 'synthesis':
+            raise RuntimeError("A \'synthesis\' chain must be provided")
         else:
-            # Soc instance.
-            self.soc = soc
-            
-            # Sanity check. Is this a sythesis chain?
-            if chain['type'] != 'synthesis':
-                raise RuntimeError("A \'synthesis\' chain must be provided")
-            else:
-                # Dictionary.
-                self.dict = {}
+            # Dictionary.
+            self.dict = {}
 
-                # Synthesis chain.
-                self.dict['chain'] = chain
-
-                ## Update settings.
-                #self.update_settings()
+            # Synthesis chain.
+            self.dict['chain'] = chain
 
     """
     def update_settings(self):
@@ -343,8 +313,9 @@ class SpectrumSoc(QickSoc):
 
         self['analysis'] = []
         self['synthesis'] = []
-        for pfb in self.pfbs_in:
+        for i, pfb in enumerate(self.pfbs_in):
             thiscfg = {}
+            thiscfg['ch']     = i
             thiscfg['type']     = 'analysis'
             thiscfg['pfb']      = pfb['fullpath']
             thiscfg['fs']       = pfb.dict['freq']['fs']
@@ -380,3 +351,47 @@ class SpectrumSoc(QickSoc):
             thiscfg['dac']  = iq['dac']
 
             self['synthesis'].append(thiscfg)
+
+
+    def ana_set_mixer_freq(self, ana_ch, f):
+        self.pfbs_in[ana_ch].set_mixer_freq(f)
+
+    def ana_get_mixer_freq(self, ana_ch):
+        return self.pfbs_in[ana_ch].get_mixer_freq()
+
+    def ana_get_data_adc(self, ana_ch, verbose=False):
+        return self.pfbs_in[ana_ch].get_data_adc(verbose)
+
+    def ana_get_bin_pfb(self, ana_ch, f, verbose=False):
+        return self.pfbs_in[ana_ch].get_bin_pfb(f, verbose)
+
+    def ana_get_bin_xfft(self, ana_ch, f, verbose=False):
+        return self.pfbs_in[ana_ch].get_bin_xfft(f, verbose)
+
+    def ana_get_data_acc(self, ana_ch, N=1, verbose=False):
+        return self.pfbs_in[ana_ch].get_data_acc(N, verbose)
+
+    def ana_get_data_acc_zoom(self, ana_ch, N=1, verbose=False):
+        return self.pfbs_in[ana_ch].get_data_acc_zoom(N, verbose)
+
+    def ana_freq2ch(self, ana_ch, f):
+        # Sanity check: is frequency on allowed range?
+        pfb = self.pfbs_in[ana_ch]
+        fmix = abs(pfb.get_mixer_freq())
+        fs = pfb.dict['freq']['fs']
+
+        if abs(f-fmix) > fs/2:
+            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+        f_ = f - fmix
+        return self.pfbs_in[ana_ch].freq2ch(f_)
+
+    def ana_ch2freq(self, ana_ch, ch):
+        # Mixer frequency.
+        pfb = self.pfbs_in[ana_ch]
+        fmix = abs(pfb.get_mixer_freq())
+        f = pfb.ch2freq(ch)
+
+        return f+fmix
+
+    def ana_qout(self, ana_ch, q):
+        self.pfbs_in[ana_ch].qout(q)
