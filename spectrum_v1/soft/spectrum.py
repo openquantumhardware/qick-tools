@@ -120,14 +120,8 @@ class AnalysisChain():
         return('Key Not Found')
 
     def get_data_adc(self, verbose=False):
-        # Get blocks.
-        buff_b = getattr(self.soc, self.dict['chain']['buff_adc'])
-
-        # Return data.
-        #return buff_b.get_data()
-        buff_b.disable()
-        buff_b.enable()
-        return buff_b.transfer().T
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
+        return pfb.get_data_adc(verbose)
 
     def get_bin_pfb(self, f=0, verbose=False):
         """
@@ -141,30 +135,9 @@ class AnalysisChain():
         :return: [i,q] data from the channel.
         :rtype:[array,array]
         """
-        # Get blocks.
-        pfb_b = getattr(self.soc, self.dict['chain']['pfb'])
-        chsel_b = getattr(self.soc, pfb_b.dict['buff_pfb_chsel'])
-        buff_b = getattr(self.soc, self.dict['chain']['buff_pfb'])
-
-        # Sanity check: is frequency on allowed range?
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
         fmix = abs(self.dict['mixer']['freq'])
-        fs = self.dict['chain']['fs']
-              
-        if (fmix-fs/2) < f < (fmix+fs/2):
-            f_ = f - fmix
-            k = pfb_b.freq2ch(f_)
-            
-            # Un-mask channel.
-            chsel_b.set(k)
-
-            if verbose:
-                print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
-                
-            # Get data.
-            return buff_b.get_data()
-
-        else:
-            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+        return pfb.get_bin_pfb(f, fmix, verbose)
 
     def get_bin_xfft(self, f=0, verbose=False):
         """
@@ -177,46 +150,17 @@ class AnalysisChain():
         :return: [i,q] data from the channel.
         :rtype:[array,array]
         """
-        # Get blocks.  
-        pfb_b   = getattr(self.soc, self.dict['chain']['pfb'])
-        chsel_b = getattr(self.soc, pfb_b.dict['buff_xfft_chsel'])
-        buff_b = getattr(self.soc, self.dict['chain']['buff_xfft'])
-
-        # Sanity check: is frequency on allowed range?
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
         fmix = abs(self.dict['mixer']['freq'])
-        fs = self.dict['chain']['fs']
-
-        if (fmix-fs/2) < f < (fmix+fs/2):
-            f_ = f - fmix
-            k = pfb_b.freq2ch(f_)
-
-            # Un-mask channel.
-            chsel_b.set(k)
-
-            if verbose:
-                print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
-
-            # Get data.
-            [xi,xq,idx] = buff_b.get_data()
-            x = xi + 1j*xq
-            x = sort_br(x,idx)
-            return x.real,x.imag
-
-        else:
-            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+        return pfb.get_bin_xfft(f, fmix, verbose)
 
     def get_data_acc(self, N=1, verbose=False):
-        # Get blocks.
-        acc_b = getattr(self.soc, self.dict['chain']['acc_xfft'])
-        x = acc_b.single_shot(N=N)
-        x = np.roll(x, -int(self.soc.FFT_N/4))
-        return x
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
+        return pfb.get_data_acc(N, verbose)
 
     def get_data_acc_zoom(self, N=1, verbose=False):
-        # Get blocks.
-        acc_b = getattr(self.soc, self.dict['chain']['acc_zoom'])
-        x = acc_b.single_shot(N=N)
-        return x
+        pfb = getattr(self.soc, self.dict['chain']['pfb'])
+        return pfb.get_data_acc_zoom(N, verbose)
 
     def freq2ch(self, f):
         # Get blocks.

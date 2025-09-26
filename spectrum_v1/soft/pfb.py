@@ -1,5 +1,6 @@
 import numpy as np
 from qick.ip import SocIP
+from fft_helpers import sort_br
 
 class AbsPfbAnalysis(SocIP):
     # Trace parameters.
@@ -17,6 +18,18 @@ class AbsPfbAnalysis(SocIP):
     HAS_WXFFT       = False
     HAS_ACC_ZOOM   = False
     HAS_DDSCIC      = False
+
+    def __init__(self, description):
+        self.acc_xfft = None
+        self.acc_zoom = None
+        self.buff_xfft_chsel = None
+        self.buff_xfft = None
+        self.buff_pfb_chsel = None
+        self.buff_pfb = None
+        self.buff_adc = None
+
+        # Initialize ip
+        super().__init__(description)
 
     def configure(self, fs):
         # Channel centers.
@@ -94,12 +107,14 @@ class AbsPfbAnalysis(SocIP):
                         block, _, _ = soc.metadata.trace_forward(block, 'm_axis_data', ["axis_accumulator_v1", "axis_accumulator"])
                         self.HAS_ACC_ZOOM = True
                         self.dict['acc_zoom'] = block
+                        self.acc_zoom = soc._get_block(block)
 
                         block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
                         self.dict['buff_wxfft_dma'] = block
                     else:
                         self.HAS_BUFF_PFB = True
                         self.dict['buff_pfb'] = block
+                        self.buff_pfb = soc._get_block(block)
 
                         block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
                         self.dict['buff_pfb_dma'] = block
@@ -111,102 +126,23 @@ class AbsPfbAnalysis(SocIP):
                 for block, port, blocktype in xfft_outputs:
                     if blocktype == "axis_chsel_pfb_x1":
                         self.dict['buff_xfft_chsel'] = block
+                        self.buff_xfft_chsel = soc._get_block(block)
 
                         block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axis_buffer_uram_v1"])
                         self.HAS_BUFF_XFFT = True
                         self.dict['buff_xfft'] = block
+                        self.buff_xfft = soc._get_block(block)
 
                         block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
                         self.dict['buff_xfft_dma'] = block
                     else:
                         self.HAS_ACC_XFFT = True
                         self.dict['acc_xfft'] = block
+                        self.acc_xfft = soc._get_block(block)
 
                         block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
                         self.HAS_DMA = True
                         self.dict['dma'] = block
-
-    def ports2adc(self, port0, port1):
-        # This function cheks the given ports correspond to the same ADC.
-        # The correspondance is (IQ mode):
-        #
-        # ADC0, tile 0.
-        # m00_axis: I
-        # m01_axis: Q
-        #
-        # ADC1, tile 0.
-        # m02_axis: I
-        # m03_axis: Q
-        #
-        # ADC0, tile 1.
-        # m10_axis: I
-        # m11_axis: Q
-        #
-        # ADC1, tile 1.
-        # m12_axis: I
-        # m13_axis: Q
-        #
-        # ADC0, tile 2.
-        # m20_axis: I
-        # m21_axis: Q
-        #
-        # ADC1, tile 2.
-        # m22_axis: I
-        # m23_axis: Q
-        #
-        # ADC0, tile 3.
-        # m30_axis: I
-        # m31_axis: Q
-        #
-        # ADC1, tile 3.
-        # m32_axis: I
-        # m33_axis: Q
-        adc_dict = {
-            '0' :   {
-                        '0' : {'port 0' : 'm00', 'port 1' : 'm01'}, 
-                        '1' : {'port 0' : 'm02', 'port 1' : 'm03'}, 
-                    },
-            '1' :   {
-                        '0' : {'port 0' : 'm10', 'port 1' : 'm11'}, 
-                        '1' : {'port 0' : 'm12', 'port 1' : 'm13'}, 
-                    },
-            '2' :   {
-                        '0' : {'port 0' : 'm20', 'port 1' : 'm21'}, 
-                        '1' : {'port 0' : 'm22', 'port 1' : 'm23'}, 
-                    },
-            '3' :   {
-                        '0' : {'port 0' : 'm30', 'port 1' : 'm31'}, 
-                        '1' : {'port 0' : 'm32', 'port 1' : 'm33'}, 
-                    },
-                    }
-
-        p0_n = port0[0:3]
-
-        # Find adc<->port.
-        # IQ on same port.
-        if port1 is None:
-            tile = p0_n[1]
-            adc  = p0_n[2]
-            return tile,adc
-
-        # IQ on different ports.
-        else:
-            p1_n = port1[0:3]
-
-            # IQ on different ports.
-            for tile in adc_dict.keys():
-                for adc in adc_dict[tile].keys():
-                    # First possibility.
-                    if p0_n == adc_dict[tile][adc]['port 0']:
-                        if p1_n == adc_dict[tile][adc]['port 1']:
-                            return tile,adc
-                    # Second possibility.
-                    if p1_n == adc_dict[tile][adc]['port 0']:
-                        if p0_n == adc_dict[tile][adc]['port 1']:
-                            return tile,adc
-
-        # If I got here, adc not found.
-        raise RuntimeError("Cannot find correspondance with any ADC for ports %s,%s" % (port0,port1))
 
     def freq2ch(self,f):
         """
@@ -293,6 +229,63 @@ class AbsPfbAnalysis(SocIP):
     def get_fb(self):
         return self.fb
 
+    def get_data_adc(self, verbose=False):
+        # Return data.
+        #return self.buff_adc.get_data()
+        self.buff_adc.disable()
+        self.buff_adc.enable()
+        return self.buff_adc.transfer().T
+
+    def get_bin_pfb(self, f, fmix, verbose=False):
+        # Sanity check: is frequency on allowed range?
+        fs = self.dict['freq']['fs']
+        if (fmix-fs/2) < f < (fmix+fs/2):
+            f_ = f - fmix
+            k = self.freq2ch(f_)
+
+            # Un-mask channel.
+            self.buff_xfft_chsel.set(k)
+
+            if verbose:
+                print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
+
+            # Get data.
+            return self.buff_pfb.get_data()
+
+        else:
+            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+
+    def get_bin_xfft(self, f, fmix, verbose=False):
+        # Sanity check: is frequency on allowed range?
+        fs = self.dict['freq']['fs']
+        if (fmix-fs/2) < f < (fmix+fs/2):
+            f_ = f - fmix
+            k = self.freq2ch(f_)
+
+            # Un-mask channel.
+            self.buff_xfft_chsel.set(k)
+
+            if verbose:
+                print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
+
+            # Get data.
+            [xi,xq,idx] = self.buff_xfft.get_data()
+            x = xi + 1j*xq
+            x = sort_br(x,idx)
+            return x.real,x.imag
+
+        else:
+            raise ValueError("Frequency value %f out of allowed range [%f,%f]" % (f,fmix-fs/2,fmix+fs/2))
+
+    def get_data_acc(self, N, verbose=False):
+        x = self.acc_xfft.single_shot(N=N)
+        fft_n = self.acc_xfft.FFT_N
+        x = np.roll(x, -int(fft_n/4))
+        return x
+
+    def get_data_acc_zoom(self, N, verbose=False):
+        return self.acc_zoom.single_shot(N=N)
+
 class AxisPfbAnalysis(AbsPfbAnalysis):
     """
     AxisPfbAnalysis class
@@ -304,19 +297,17 @@ class AxisPfbAnalysis(AbsPfbAnalysis):
               'user.org:user:axis_pfb_8x16_v1:1.0'     ,
               'QICK:QICK:axis_pfb_8x16_v1:1.0'         ]
     
-    def __init__(self, description):
-        # Initialize ip
-        super().__init__(description)
-
+    def _init_config(self, description):
         self.REGISTERS = {  'scale_reg' : 0,
                             'qout_reg'  : 1 }
-        
-        # Default registers.
-        self.scale_reg  = 0
-        self.qout_reg   = 0
-
         # Dictionary.
         self.dict = {}
         #self.dict['N'] = int(description['parameters']['N'])
         self.dict['N'] = 16 #int(description['parameters']['N'])
+        
+    def _init_firmware(self):
+        # Default registers.
+        self.scale_reg  = 0
+        self.qout_reg   = 0
+
 
