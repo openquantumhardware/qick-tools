@@ -18,12 +18,12 @@ class AbsPfbAnalysis(SocIP):
     HAS_ADC         = False
     HAS_DMA         = False
     HAS_XFFT        = False
-    HAS_ACC_XFFT = False
+    HAS_ACC_XFFT    = False
     HAS_BUFF_ADC    = False
     HAS_BUFF_PFB    = False
     HAS_BUFF_XFFT   = False
     HAS_WXFFT       = False
-    HAS_ACC_ZOOM   = False
+    HAS_ACC_ZOOM    = False
     HAS_DDSCIC      = False
 
     def __init__(self, description):
@@ -101,24 +101,37 @@ class AbsPfbAnalysis(SocIP):
         for block, port, blocktype in pfb_outputs:
             if blocktype == "axis_chsel_pfb_x1":
                 self.dict['buff_pfb_chsel'] = block
+                self.buff_pfb_chsel = soc._get_block(block)
+
                 pfbch_outputs = soc.metadata.list_outputs(block, 'm_axis', ["axis_buffer_v1", "axis_buffer", "axis_ddscic_v3"])
                 for block, port, blocktype in pfbch_outputs:
                     if blocktype == "axis_ddscic_v3":
                         self.HAS_DDSCIC = True
                         self.dict['ddscic'] = block
 
-                        block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axis_wxfft_65536"])
-                        self.HAS_WXFFT = True
-                        self.dict['wxfft'] = block
+                        ddscic_outputs = soc.metadata.list_outputs(block, 'm_axis', ["axis_buffer_v1", "axis_buffer", "axis_wxfft_65536"])
+                        for block, port, blocktype in ddscic_outputs:
+                            if blocktype == "axis_wxfft_65536":
+                                self.HAS_WXFFT = True
+                                self.dict['wxfft'] = block
 
-                        block, _, _ = soc.metadata.trace_forward(block, 'm_axis_data', ["axis_accumulator_v1", "axis_accumulator"])
-                        self.HAS_ACC_ZOOM = True
-                        self.dict['acc_zoom'] = block
-                        self.acc_zoom = soc._get_block(block)
+                                block, _, _ = soc.metadata.trace_forward(block, 'm_axis_data', ["axis_accumulator_v1", "axis_accumulator"])
+                                self.HAS_ACC_ZOOM = True
+                                self.dict['acc_zoom'] = block
+                                self.acc_zoom = soc._get_block(block)
 
-                        block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
-                        self.dict['buff_wxfft_dma'] = block
+                                block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
+                                self.dict['buff_wxfft_dma'] = block
+                            else:
+                                # PFB Buffer can be at output of DDSCIC...
+                                self.HAS_BUFF_PFB = True
+                                self.dict['buff_pfb'] = block
+                                self.buff_pfb = soc._get_block(block)
+
+                                block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
+                                self.dict['buff_pfb_dma'] = block
                     else:
+                        # ... or it can be at the output of the PFB_CHSEL 
                         self.HAS_BUFF_PFB = True
                         self.dict['buff_pfb'] = block
                         self.buff_pfb = soc._get_block(block)
@@ -214,7 +227,7 @@ class AbsPfbAnalysis(SocIP):
         if self.dict['mixer']['type'] == 'coarse':
             return self.dict['mixer']['freq']
         else:
-            return sself.soc.rf.get_mixer_freq(self.dict['adc']['id'], 'adc')
+            return self.soc.rf.get_mixer_freq(self.dict['adc']['id'], 'adc')
 
     def freq2ch(self,f):
         """
@@ -318,7 +331,7 @@ class AbsPfbAnalysis(SocIP):
         k = self.freq2ch(f_)
 
         # Un-mask channel.
-        self.buff_xfft_chsel.set(k)
+        self.buff_pfb_chsel.set(k)
 
         if verbose:
             print("{}: f = {} MHz, fd = {} MHz, k = {}".format(__class__.__name__, f, f_, k))
