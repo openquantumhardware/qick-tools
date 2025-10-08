@@ -1,3 +1,8 @@
 .ipynb_checkpoints/
 *.swp
 __pycache__/
+# Vivado
+.Xil/
+*.log
+*.jou
+vivado_pid*.str
