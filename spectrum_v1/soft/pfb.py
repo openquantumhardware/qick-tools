@@ -20,6 +20,7 @@ class AbsPfbAnalysis(SocIP):
     HAS_XFFT        = False
     HAS_ACC_XFFT    = False
     HAS_BUFF_ADC    = False
+    HAS_SWITCH_ADC  = False
     HAS_BUFF_PFB    = False
     HAS_BUFF_XFFT   = False
     HAS_WXFFT       = False
@@ -34,6 +35,7 @@ class AbsPfbAnalysis(SocIP):
         self.buff_pfb_chsel = None
         self.buff_pfb = None
         self.buff_adc = None
+        self.switch_adc = None
 
         # Initialize ip
         super().__init__(description)
@@ -77,8 +79,34 @@ class AbsPfbAnalysis(SocIP):
                 self.buff_adc_dma = soc._get_block(block_fwd)
 
                 # Normal block/port to continue with backwards trace.
-                block, port, blocktype = soc.metadata.trace_back(block, 'S_AXIS', ["usp_rf_data_converter", "axis_combiner"])
+                block, port, blocktype = soc.metadata.trace_back(block, 'S_AXIS', ["usp_rf_data_converter", "axis_combiner", "axis_switch"])
             else:
+                if blocktype == "axis_switch":
+                    # Add block into dictionary.
+                    self.HAS_SWITCH_ADC = True
+                    self.dict['switch_adc'] = block
+                    self.switch_adc = soc._get_block(block)
+
+                    # # Number of slave interfaces.
+                    # NUM_SI_param = int(soc.metadata.get_param(block, 'NUM_SI'))
+
+                    # # Back trace first slave.
+                    # for iIn in range(NUM_SI_param):
+                    #     inname = "S%02d_AXIS" % (iIn)
+                    #     trace_result = soc.metadata.trace_back(block, inname, ["usp_rf_data_converter", "axis_combiner"])
+                    #     # skip switch inputs that aren't connected to anything
+                    #     if trace_result is None: continue
+                    #     ro_block, port, blocktype = trace_result
+
+                        # # trace the decimated output forward to find the avg_buf driven by this readout
+                        # block, port, blocktype = soc.metadata.trace_forward(ro_block, 'm1_axis', BUF_TYPES)
+
+                        # self.buf2switch[block] = iIn
+                        # self.cfg['readouts'].append(block)
+
+                    # Trace only first input
+                    block, port, blocktype = soc.metadata.trace_back(block, 'S00_AXIS', ["usp_rf_data_converter", "axis_combiner"])
+
                 if blocktype == "axis_combiner":
                     # Sanity check: combiner should have 2 slave ports.
                     nslave = int(soc.metadata.get_param(block, 'C_NUM_SI_SLOTS'))

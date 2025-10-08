@@ -81,6 +81,10 @@ class SpectrumSoc(QickSoc):
                 block.configure(dma)
                 self.FFT_N = int(block.FFT_N)
                 self.acc_full = self.axis_accumulator_0
+            
+            if pfb.HAS_SWITCH_ADC:
+                block = getattr(self, pfb.dict['switch_adc'])
+                block.sel(0,0)
 
 
         self['analysis'] = []
@@ -112,6 +116,8 @@ class SpectrumSoc(QickSoc):
                 thiscfg['wxfft'] = pfb.dict['wxfft']
             if pfb.HAS_ACC_ZOOM:
                 thiscfg['acc_zoom'] = pfb.dict['acc_zoom']
+            if pfb.HAS_SWITCH_ADC:
+                thiscfg['switch_adc'] = pfb.dict['switch_adc']
 
             self['analysis'].append(thiscfg)
 
