@@ -131,7 +131,7 @@ class AbsPfbAnalysis(SocIP):
                 self.dict['buff_pfb_chsel'] = block
                 self.buff_pfb_chsel = soc._get_block(block)
 
-                pfbch_outputs = soc.metadata.list_outputs(block, 'm_axis', ["axis_buffer_v1", "axis_buffer", "axis_ddscic_v3"])
+                pfbch_outputs = soc.metadata.list_outputs(block, 'm_axis', ["axis_buffer_v1", "axis_buffer", "axis_ddscic_v3", "axis_avg_buffer", "axis_buffer_ddr"])
                 for block, port, blocktype in pfbch_outputs:
                     if blocktype == "axis_ddscic_v3":
                         self.HAS_DDSCIC = True
@@ -150,7 +150,7 @@ class AbsPfbAnalysis(SocIP):
 
                                 block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
                                 self.dict['buff_wxfft_dma'] = block
-                            else:
+                            elif blocktype == "axis_buffer_v1":
                                 # PFB Buffer can be at output of DDSCIC...
                                 self.HAS_BUFF_PFB = True
                                 self.dict['buff_pfb'] = block
@@ -158,7 +158,7 @@ class AbsPfbAnalysis(SocIP):
 
                                 block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
                                 self.dict['buff_pfb_dma'] = block
-                    else:
+                    elif blocktype == "axis_buffer_v1":
                         # ... or it can be at the output of the PFB_CHSEL 
                         self.HAS_BUFF_PFB = True
                         self.dict['buff_pfb'] = block
@@ -166,7 +166,7 @@ class AbsPfbAnalysis(SocIP):
 
                         block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
                         self.dict['buff_pfb_dma'] = block
-            else: # xfft
+            elif blocktype == "axis_xfft_16x16384": # xfft
                 self.HAS_XFFT = True
                 self.dict['xfft'] = block
 
@@ -183,7 +183,7 @@ class AbsPfbAnalysis(SocIP):
 
                         block, _, _ = soc.metadata.trace_forward(block, 'm_axis', ["axi_dma"])
                         self.dict['buff_xfft_dma'] = block
-                    else:
+                    elif blocktype == "axis_accumulator_v1":
                         self.HAS_ACC_XFFT = True
                         self.dict['acc_xfft'] = block
                         self.acc_xfft = soc._get_block(block)

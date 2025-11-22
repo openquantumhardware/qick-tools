@@ -173,3 +173,16 @@ class SpectrumSoc(QickSoc):
 
     def ana_qout(self, ana_ch, q):
         self.pfbs_in[ana_ch].qout(q)
+
+    def adc_224_0_sw_sel(self, use_adc_224_0=False):
+        adc_224_0_sw = self._get_block("axis_switch_adc_224_0")
+        if use_adc_224_0:
+            adc_224_0_sw.sel(slv=0,mst=0)
+        else:
+            adc_224_0_sw.sel(slv=1,mst=0)
+
+    def adc_fft_sel(self, adc_ch=0):
+        if (adc_ch < 4):
+            self._get_block('axis_switch_adc_0').sel(slv=adc_ch,mst=0)
+        else:
+            raise ValueError("ADC axis_switch_adc_0 channel value %0d not supported" % (adc_ch))
