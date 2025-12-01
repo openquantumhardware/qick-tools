@@ -137,7 +137,7 @@ class AbsPfbAnalysis(SocIP):
                         self.HAS_DDSCIC = True
                         self.dict['ddscic'] = block
 
-                        ddscic_outputs = soc.metadata.list_outputs(block, 'm_axis', ["axis_buffer_v1", "axis_buffer", "axis_wxfft_65536"])
+                        ddscic_outputs = soc.metadata.list_outputs(block, 'm_axis', ["axis_buffer_v1", "axis_buffer", "axis_wxfft_65536", "axis_avg_buffer", "axis_buffer_ddr"])
                         for block, port, blocktype in ddscic_outputs:
                             if blocktype == "axis_wxfft_65536":
                                 self.HAS_WXFFT = True

@@ -82,7 +82,7 @@ class AnalysisChain():
         return self.soc.ana_get_data_acc(self.ch, N, verbose)
 
     def get_data_acc_zoom(self, N=1, verbose=False):
-        return self.soc.ana_get_data_zoom(self.ch, N, verbose)
+        return self.soc.ana_get_data_acc_zoom(self.ch, N, verbose)
 
     def freq2ch(self, f):
         return self.soc.ana_freq2ch(self.ch, f)
@@ -226,6 +226,21 @@ class DualChain():
     def get_data_acc_zoom(self, N=1, verbose=False):
         return self.analysis.get_data_acc_zoom(N=N, verbose=verbose)
 
+    def set_ddscic_ddsfreq(self, f):
+        self.analysis.soc.axis_ddscic_v3_0.ddsfreq(f=f)
+
+    def set_ddscic_decimation(self, D):
+        self.analysis.soc.axis_ddscic_v3_0.decimation(D)
+
+    def get_ddscic_decimation(self):
+        return self.analysis.soc.axis_ddscic_v3_0.get_decimation()
+
+    def set_ddscic_outsel(self, data, cic):
+        self.analysis.soc.axis_ddscic_v3_0.outsel(data=data, cic=cic)
+
+    def set_ddscic_set_qprod(self, b):
+        self.analysis.soc.axis_ddscic_v3_0.set_qprod(b)
+
     @property
     def fs(self):
         return self.analysis.fs
@@ -241,4 +256,12 @@ class DualChain():
     @property
     def nch(self):
         return self.analysis.nch
+
+    @property
+    def FFT_N(self):
+        return self.analysis.soc.FFT_N
+
+    @property
+    def WFFT_N(self):
+        return self.analysis.soc.WFFT_N
 
