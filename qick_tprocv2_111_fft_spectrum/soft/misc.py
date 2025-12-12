@@ -507,7 +507,7 @@ class AxisDdsCicV3(SocIP):
 
     def ddsfreq(self, f=0):
         # Sanity check.
-        if (f >= 0 and f < self.FS_DDS):
+        if (np.abs(f) < self.FS_DDS):
             # Compute register value.
             ki = int(round(f/self.DF_DDS))
             
