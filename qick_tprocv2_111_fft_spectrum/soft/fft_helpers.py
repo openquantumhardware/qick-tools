@@ -92,7 +92,22 @@ class AnalysisChain():
     
     def qout(self,q):
         self.soc.ana_qout(self.ch, q)
-        
+
+    def set_ddscic_ddsfreq(self, f):
+        self.soc.set_ddscic_ddsfreq(self.ch, f=f)
+
+    def set_ddscic_decimation(self, D):
+        self.soc.set_ddscic_decimation(self.ch, D)
+
+    def get_ddscic_decimation(self):
+        return self.soc.get_ddscic_decimation(self.ch)
+
+    def set_ddscic_outsel(self, data, cic):
+        self.soc.set_ddscic_outsel(self.ch, data=data, cic=cic)
+
+    def set_ddscic_qprod(self, b):
+        self.soc.set_ddscic_qprod(self.ch, b)
+
     @property
     def fs(self):
         return self.dict['chain']['fs']
@@ -108,6 +123,14 @@ class AnalysisChain():
     @property
     def nch(self):
         return self.dict['chain']['nch']
+
+    @property
+    def FFT_N(self):
+        return self.soc.get_fft_n()
+
+    @property
+    def WFFT_N(self):
+        return self.soc.get_wfft_n()
 
 class SynthesisChain():
     # Event dictionary.
@@ -226,21 +249,6 @@ class DualChain():
     def get_data_acc_zoom(self, N=1, verbose=False):
         return self.analysis.get_data_acc_zoom(N=N, verbose=verbose)
 
-    def set_ddscic_ddsfreq(self, f):
-        self.analysis.soc.axis_ddscic_v3_0.ddsfreq(f=f)
-
-    def set_ddscic_decimation(self, D):
-        self.analysis.soc.axis_ddscic_v3_0.decimation(D)
-
-    def get_ddscic_decimation(self):
-        return self.analysis.soc.axis_ddscic_v3_0.get_decimation()
-
-    def set_ddscic_outsel(self, data, cic):
-        self.analysis.soc.axis_ddscic_v3_0.outsel(data=data, cic=cic)
-
-    def set_ddscic_set_qprod(self, b):
-        self.analysis.soc.axis_ddscic_v3_0.set_qprod(b)
-
     @property
     def fs(self):
         return self.analysis.fs
@@ -256,12 +264,3 @@ class DualChain():
     @property
     def nch(self):
         return self.analysis.nch
-
-    @property
-    def FFT_N(self):
-        return self.analysis.soc.FFT_N
-
-    @property
-    def WFFT_N(self):
-        return self.analysis.soc.WFFT_N
-

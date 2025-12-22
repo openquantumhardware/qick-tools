@@ -88,7 +88,6 @@ class SpectrumSoc(QickSoc):
 
 
         self['analysis'] = []
-        self['synthesis'] = []
         for i, pfb in enumerate(self.pfbs_in):
             thiscfg = {}
             thiscfg['ch']     = i
@@ -121,6 +120,7 @@ class SpectrumSoc(QickSoc):
 
             self['analysis'].append(thiscfg)
 
+        self['synthesis'] = []
         # IQ Constant based synthesis.
         for i, iq in enumerate(self.iqs):
             thiscfg = {}
@@ -129,7 +129,6 @@ class SpectrumSoc(QickSoc):
             thiscfg['dac']  = iq['dac']
 
             self['synthesis'].append(thiscfg)
-
 
     def ana_set_mixer_freq(self, ana_ch, f):
         self.pfbs_in[ana_ch].set_mixer_freq(f)
@@ -186,3 +185,24 @@ class SpectrumSoc(QickSoc):
             self._get_block('axis_switch_adc_0').sel(slv=adc_ch,mst=0)
         else:
             raise ValueError("ADC axis_switch_adc_0 channel value %0d not supported" % (adc_ch))
+
+    def set_ddscic_ddsfreq(self, ana_ch, f):
+        self.pfbs_in[ana_ch].ddscic.ddsfreq(f=f)
+
+    def set_ddscic_decimation(self, ana_ch, D):
+        self.pfbs_in[ana_ch].ddscic.decimation(D)
+
+    def get_ddscic_decimation(self, ana_ch):
+        return self.pfbs_in[ana_ch].ddscic.get_decimation()
+
+    def set_ddscic_outsel(self, ana_ch, data, cic):
+        self.pfbs_in[ana_ch].ddscic.outsel(data=data, cic=cic)
+
+    def set_ddscic_qprod(self, ana_ch, b):
+        self.pfbs_in[ana_ch].ddscic.set_qprod(b)
+
+    def get_fft_n(self):
+        return self.FFT_N
+
+    def get_wfft_n(self):
+        return self.WFFT_N
