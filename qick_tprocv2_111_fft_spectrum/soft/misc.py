@@ -515,6 +515,8 @@ class AxisDdsCicV3(SocIP):
             self.pinc_reg       = ki
             self.pinc_we_reg    = 1
             self.pinc_we_reg    = 0
+        else:
+            raise ValueError("Frequency %f Hz is out of range. Max frequency is %f Hz."%(f,self.FS_DDS))
         
     def prodsel(self, sel="product"):
         if sel == "product":
@@ -523,6 +525,8 @@ class AxisDdsCicV3(SocIP):
             self.prodsel_reg = 1
         elif sel == "input":
             self.prodsel_reg = 2
+        else:
+            raise ValueError("Invalid product selection: %s. Valid options are 'product', 'dds' or 'input'."%sel)
 
     def cicsel(self, sel="yes"):
         if sel == "yes":
@@ -538,14 +542,18 @@ class AxisDdsCicV3(SocIP):
         # Sanity check.
         if (value >= self.MIN_QPROD and value <= self.MAX_QPROD):
             self.qprod_reg = value
+        else:
+            raise ValueError("Qprod value %d is out of range. Valid range is %d to %d."%(value,self.MIN_QPROD,self.MAX_QPROD))
             
     def get_qprod(self):
-        return self.qprod_reg            
+        return self.qprod_reg
 
     def set_qcic(self, value=0):
         # Sanity check.
         if (value >= self.MIN_QCIC and value <= self.MAX_QCIC):
             self.qcic_reg = value
+        else:
+            raise ValueError("Qcic value %d is out of range. Valid range is %d to %d."%(value,self.MIN_QCIC,self.MAX_QCIC))
             
     def get_qcic(self):
         return self.qcic_reg
@@ -554,6 +562,8 @@ class AxisDdsCicV3(SocIP):
         # Sanity check.
         if (value >= self.MIN_D and value <= self.MAX_D):
             self.dec_reg = value
+        else:
+            raise ValueError("Decimation value %d is out of range. Valid range is %d to %d."%(value,self.MIN_D,self.MAX_D))
 
     def decimation(self, value):
         # Sanity check.
@@ -564,6 +574,8 @@ class AxisDdsCicV3(SocIP):
             # Set values.
             self.set_dec(value)
             self.set_qcic(qsel)
+        else:
+            raise ValueError("Decimation value %d is out of range. Valid range is %d to %d."%(value,self.MIN_D,self.MAX_D))
             
     def get_decimation(self):
         if self.cicsel_reg:
