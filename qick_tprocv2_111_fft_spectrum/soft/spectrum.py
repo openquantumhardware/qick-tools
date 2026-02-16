@@ -174,11 +174,23 @@ class SpectrumSoc(QickSoc):
         self.pfbs_in[ana_ch].qout(q)
 
     def adc_224_0_sw_sel(self, use_adc_224_0=False):
+        # FIXME: this is hardcoded for current design, needs to be correctly coded to automatically detect ADCs
         adc_224_0_sw = self._get_block("axis_switch_adc_224_0")
         if use_adc_224_0:
             adc_224_0_sw.sel(slv=0,mst=0)
+            # update adc to the corresponding id
+            self.readouts[0].cfg['adc'] = '00'
         else:
             adc_224_0_sw.sel(slv=1,mst=0)
+            # update adc to the corresponding id
+            self.readouts[0].cfg['adc'] = '20'
+        # Call readout configure to update readout settings
+        self.readouts[0].configure(self.rf)
+        # Update relevant keys
+        ro_cfg = self.readouts[0].cfg
+        for key in self['readouts'][0]:
+            if key in ro_cfg:
+                self['readouts'][0][key] = ro_cfg[key]
 
     def adc_fft_sel(self, adc_ch=0):
         if (adc_ch < 4):
