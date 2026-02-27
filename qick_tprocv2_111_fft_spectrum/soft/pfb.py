@@ -333,6 +333,8 @@ class AbsPfbAnalysis(SocIP):
         return freq
             
     def qout(self, qout):
+        if (qout < 0) or (qout > 11):
+            raise ValueError("QOUT value %d out of allowed range [0,11]" % (qout))
         self.qout_reg = qout
 
     def get_fs(self):
