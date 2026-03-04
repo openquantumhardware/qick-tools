@@ -249,7 +249,7 @@ class AxisAccumulatorV6(SocIP):
     def transmitting(self):
         return self.transmitting_reg
 
-    def transfer(self):
+    def transfer(self, uint_fix=True):
         # DMA data.
         self.dma.recvchannel.transfer(self.buff)
         self.dma.recvchannel.wait()
@@ -258,14 +258,22 @@ class AxisAccumulatorV6(SocIP):
         # First dimension: Lower 64 bits.
         # Second dimension: Upper 64 bts.
         # Last sample: Meta Data.
-        s_low = self.buff[:-1,0]
-        s_low = s_low.astype(np.float64)
-        s_high = self.buff[:-1,1]
-        s_high = s_high.astype(np.float64)
-        samples = s_low + (2**64 * s_high).astype(np.float64)
-        meta0   = self.buff[-1,0]
-        meta1   = self.buff[-1,1]
-        nsamp = meta0 >> np.int64(32)
+        if (uint_fix == False):
+            s_low = self.buff[:-1,0]
+            s_low = s_low.astype(np.float64)
+            s_high = self.buff[:-1,1]
+            s_high = s_high.astype(np.float64)
+            samples = s_low + (2**64 * s_high).astype(np.float64)
+        else:
+            # DMA buffer dtype is int64, reinterpret as uint64 to preserve bit patterns.
+            s_low = self.buff[:-1, 0].view(np.uint64).astype(object)
+            s_high = self.buff[:-1, 1].view(np.uint64).astype(object)
+            samples = s_low + 2**64 * s_high
+            samples = np.asarray(samples, dtype=np.float64)
+
+        meta0 = np.uint64(self.buff[-1, 0])
+        meta1 = np.uint64(self.buff[-1, 1])
+        nsamp = int(meta0 >> np.uint64(32))
 
         return samples/nsamp
 
