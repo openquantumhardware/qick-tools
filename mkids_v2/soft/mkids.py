@@ -10,126 +10,6 @@ from tqdm.notebook import trange, tqdm
 from scipy.signal import welch
 from scipy.optimize import curve_fit
 
-
-class RFDC(xrfdc.RFdc):
-    """
-    Extends the xrfdc driver.
-    """
-    bindto = ["xilinx.com:ip:usp_rf_data_converter:2.3",
-              "xilinx.com:ip:usp_rf_data_converter:2.4",
-              "xilinx.com:ip:usp_rf_data_converter:2.6"]
-
-    def __init__(self, description):
-        """
-        Constructor method
-        """
-        super().__init__(description)
-        # Dictionary for configuration.
-        self.dict = {}
-
-        # Initialize nqz and freq.
-        self.dict['nqz']  = {'adc' : {}, 'dac' : {}}
-        self.dict['freq'] = {'adc' : {}, 'dac' : {}}
-
-    def configure(self, soc):
-        self.dict['cfg'] = {'adc' : soc.adcs, 'dac' : soc.dacs}
-
-    def set_mixer_freq(self, blockid, f, blocktype='dac'):
-        # Get config.
-        cfg = self.dict['cfg'][blocktype]
-
-        # Check Nyquist zone.
-        fs = cfg[blockid]['fs']
-        if abs(f) > fs/2 and self.get_nyquist(blockid, blocktype)==2:
-            f *= -1
-
-        # Get tile and channel from id.
-        tile, channel = [int(a) for a in blockid]
-
-        # Get Mixer Settings.
-        if blocktype == 'adc':
-            m_set = self.adc_tiles[tile].blocks[channel].MixerSettings
-        elif blocktype == 'dac':
-            m_set = self.dac_tiles[tile].blocks[channel].MixerSettings
-        else:
-            raise RuntimeError("Blocktype %s not recognized" & blocktype)
-
-        # Make a copy of mixer settings.
-        m_set_copy = m_set.copy()
-
-        # Update the copy
-        m_set_copy.update({
-            'Freq': f,
-            'PhaseOffset': 0})
-
-        # Update settings.
-        if blocktype == 'adc':
-            self.adc_tiles[tile].blocks[channel].MixerSettings = m_set_copy
-            self.adc_tiles[tile].blocks[channel].UpdateEvent(xrfdc.EVENT_MIXER)
-            self.dict['freq'][blocktype][blockid] = f
-        elif blocktype == 'dac':
-            self.dac_tiles[tile].blocks[channel].MixerSettings = m_set_copy
-            self.dac_tiles[tile].blocks[channel].UpdateEvent(xrfdc.EVENT_MIXER)
-            self.dict['freq'][blocktype][blockid] = f
-        else:
-            raise RuntimeError("Blocktype %s not recognized" & blocktype)
-        
-
-    def get_mixer_freq(self, blockid, blocktype='dac'):
-        try:
-            return self.dict['freq'][blocktype][blockid]
-        except KeyError:
-            # Get tile and channel from id.
-            tile, channel = [int(a) for a in blockid]
-
-            # Fill freq dictionary.
-            if blocktype == 'adc':
-                self.dict['freq'][blocktype][blockid] = self.adc_tiles[tile].blocks[channel].MixerSettings['Freq']
-            elif blocktype == 'dac':
-                self.dict['freq'][blocktype][blockid] = self.dac_tiles[tile].blocks[channel].MixerSettings['Freq']
-            else:
-                raise RuntimeError("Blocktype %s not recognized" & blocktype)
-
-            return self.dict['freq'][blocktype][blockid]
-
-    def set_nyquist(self, blockid, nqz, blocktype='dac', force=False):
-        # Check valid selection.
-        if nqz not in [1,2]:
-            raise ValueError("Nyquist zone must be 1 or 2")
-
-        # Get tile and channel from id.
-        tile, channel = [int(a) for a in blockid]
-
-        # Need to update?
-        if not force and self.get_nyquist(blockid,blocktype) == nqz:
-            return
-
-        if blocktype == 'adc':
-            self.adc_tiles[tile].blocks[channel].NyquistZone = nqz
-            self.dict['nqz'][blocktype][blockid] = nqz
-        elif blocktype == 'dac':
-            self.dac_tiles[tile].blocks[channel].NyquistZone = nqz
-            self.dict['nqz'][blocktype][blockid] = nqz
-        else:
-            raise RuntimeError("Blocktype %s not recognized" & blocktype)
-
-    def get_nyquist(self, blockid, blocktype='dac'):
-        try:
-            return self.dict['nqz'][blocktype][blockid]
-        except KeyError:
-            # Get tile and channel from id.
-            tile, channel = [int(a) for a in blockid]
-
-            # Fill nqz dictionary.
-            if blocktype == 'adc':
-                self.dict['nqz'][blocktype][blockid] = self.adc_tiles[tile].blocks[channel].NyquistZone
-            elif blocktype == 'dac':
-                self.dict['nqz'][blocktype][blockid] = self.dac_tiles[tile].blocks[channel].NyquistZone
-            else:
-                raise RuntimeError("Blocktype %s not recognized" & blocktype)
-
-            return self.dict['nqz'][blocktype][blockid]
-
 class AnalysisChain():
     # Event dictionary.
     event_dict = {
@@ -1514,59 +1394,17 @@ class FilterChain():
         # Enable all channels.
         self.allon()
         
-class MkidsSoc(Overlay, QickConfig):    
+class MkidsSoc(QickSoc):
 
     # Constructor.
-    def __init__(self, bitfile=None, force_init_clks=False, ignore_version=True, clk_output=None, external_clk=None, **kwargs):
-        """
-        Constructor method
-        """
-
-        self.external_clk = external_clk
-        self.clk_output = clk_output
-
+    def __init__(self, bitfile=None, **kwargs):
         # Load bitstream.
         if bitfile is None:
             raise RuntimeError("bitfile name must be provided")
-        else:
-            Overlay.__init__(self, bitfile, ignore_version=ignore_version, download=False, **kwargs)
-        
-        # Initialize the configuration
-        self._cfg = {}
-        QickConfig.__init__(self)
+        super().__init__(bitfile=bitfile, no_tproc=True, **kwargs)
 
-        self['board'] = os.environ["BOARD"]
-        if self['board'] == "ZCU208":
-            self['board'] = "ZCU216"
-
-        # Read the config to get a list of enabled ADCs and DACs, and the sampling frequencies.
-        self.list_rf_blocks(
-            self.ip_dict['usp_rf_data_converter_0']['parameters'])
-
-        self.config_clocks(force_init_clks)
-
-        # RF data converter (for configuring ADCs and DACs, and setting NCOs)
-        self.rf = self.usp_rf_data_converter_0
-        self.rf.configure(self)
-
-        # Extract the IP connectivity information from the HWH parser and metadata.
-        self.metadata = QickMetadata(self)
-
-        self.map_signal_paths()
-
-    def description(self):
-        """Generate a printable description of the QICK configuration.
-
-        Parameters
-        ----------
-
-        Returns
-        -------
-        str
-            description
-
-        """
         lines = []
+        lines = ["\nMKIDS configuration:\n"]
         lines.append("\n\tBoard: " + self['board'])
 
         # Dual Chains.
@@ -1578,8 +1416,8 @@ class MkidsSoc(Overlay, QickConfig):
                 name = ""
                 if 'name' in chain.keys():
                     name = chain['name']
-                adc_ = self.adcs[chain_a['adc']['id']]
-                dac_ = self.dacs[chain_s['dac']['id']]
+                adc_ = self['rf']['adcs'][chain_a['adc']['id']]
+                dac_ = self['rf']['dacs'][chain_s['dac']['id']]
                 lines.append("\tDual %d: %s" % (i,name))
                 lines.append("\t\tADC: %d_%d, fs = %.1f MHz, Decimation    = %d" %
                             (224+int(chain_a['adc']['tile']), int(chain_a['adc']['ch']), adc_['fs'], adc_['decimation']))
@@ -1595,8 +1433,8 @@ class MkidsSoc(Overlay, QickConfig):
                 chain_a = chain['analysis']
                 chain_s = chain['synthesis']
                 name = ""
-                adc_ = self.adcs[chain_a['adc']['id']]
-                dac_ = self.dacs[chain_s['dac']['id']]
+                adc_ = self['rf']['adcs'][chain_a['adc']['id']]
+                dac_ = self['rf']['dacs'][chain_s['dac']['id']]
                 if 'name' in chain.keys():
                     name = chain['name']
                 lines.append("\tSim %d: %s" % (i,name))
@@ -1613,8 +1451,8 @@ class MkidsSoc(Overlay, QickConfig):
                 chain_a = chain['analysis']
                 chain_s = chain['synthesis']
                 name = ""
-                adc_ = self.adcs[chain_a['adc']['id']]
-                dac_ = self.dacs[chain_s['dac']['id']]
+                adc_ = self['rf']['adcs'][chain_a['adc']['id']]
+                dac_ = self['rf']['dacs'][chain_s['dac']['id']]
                 if 'name' in chain.keys():
                     name = chain['name']
                 lines.append("\tFilter %d: %s" % (i,name))
@@ -1625,13 +1463,11 @@ class MkidsSoc(Overlay, QickConfig):
                 lines.append("\t\tPFB: fs = %.1f MHz, fc = %.1f MHz, %d channels" %
                             (chain_a['fs_ch'], chain_a['fc_ch'], chain_a['nch']))
 
-        return "\nQICK configuration:\n"+"\n".join(lines)
 
-    def map_signal_paths(self):
-        # Use the HWH parser to trace connectivity and deduce the channel numbering.
-        for key, val in self.ip_dict.items():
-            if hasattr(val['driver'], 'configure_connections'):
-                getattr(self, key).configure_connections(self)
+        self['extra_description'].extend(lines)
+
+    def map_signal_paths(self, no_tproc):
+        super().map_signal_paths(no_tproc)
 
         # PFB for Analysis.
         self.pfbs_in = []
@@ -1655,10 +1491,11 @@ class MkidsSoc(Overlay, QickConfig):
             elif val['driver'] in gens_drivers:
                 self.gens.append(getattr(self, key))
 
+
         # Configure the drivers.
         for pfb in self.pfbs_in:
             adc = pfb.dict['adc']['id']
-            pfb.configure(self.adcs[adc]['fs']/self.adcs[adc]['decimation'])
+            pfb.configure(self['rf']['adcs'][adc]['fs']/self['rf']['adcs'][adc]['decimation'])
 
             # Does this pfb has a DDSCIC?
             if pfb.HAS_DDSCIC:
@@ -1691,7 +1528,7 @@ class MkidsSoc(Overlay, QickConfig):
 
         for pfb in self.pfbs_out:
             dac = pfb.dict['dac']['id']
-            pfb.configure(self.dacs[dac]['fs']/self.dacs[dac]['interpolation'])
+            pfb.configure(self['rf']['dacs'][dac]['fs']/self['rf']['dacs'][dac]['interpolation'])
 
             # Does this pfb has a DDSCIC?
             if pfb.HAS_DDS:
@@ -1700,15 +1537,15 @@ class MkidsSoc(Overlay, QickConfig):
 
         for gen in self.gens:
             dac = gen.dict['dac']['id']
-            gen.configure(self.dacs[dac]['fs']/self.dacs[dac]['interpolation'])
+            gen.configure(self['rf']['dacs'][dac]['fs']/self['rf']['dacs'][dac]['interpolation'])
             
             # Does this block has a CTRL?
             if gen.HAS_CTRL:
                 block = getattr(self, gen.dict['ctrl'])
                 block.configure(gen)
 
-        self['adcs'] = list(self.adcs.keys())
-        self['dacs'] = list(self.dacs.keys())
+        self['adcs'] = list(self['rf']['adcs'].keys())
+        self['dacs'] = list(self['rf']['dacs'].keys())
         self['analysis'] = []
         self['synthesis'] = []
         self['dual'] = []
@@ -1718,7 +1555,7 @@ class MkidsSoc(Overlay, QickConfig):
             thiscfg = {}
             thiscfg['type'] = 'analysis'
             thiscfg['adc'] = pfb.dict['adc']
-            thiscfg['pfb'] = pfb.fullpath
+            thiscfg['pfb'] = pfb['fullpath']
             if pfb.HAS_DDSCIC:
                 thiscfg['subtype'] = 'single'
                 thiscfg['dds'] = pfb.dict['ddscic']
@@ -1764,7 +1601,7 @@ class MkidsSoc(Overlay, QickConfig):
                 thiscfg['subtype'] = 'filter'
                 thiscfg['filter'] = pfb.dict['filter']
             thiscfg['dac'] = pfb.dict['dac']
-            thiscfg['pfb'] = pfb.fullpath
+            thiscfg['pfb'] = pfb['fullpath']
             thiscfg['fs'] = pfb.dict['freq']['fs']
             thiscfg['fs_ch'] = pfb.dict['freq']['fb']
             thiscfg['fc_ch'] = pfb.dict['freq']['fc']
@@ -1776,7 +1613,7 @@ class MkidsSoc(Overlay, QickConfig):
             thiscfg['type'] = 'synthesis'
             thiscfg['subtype'] = 'single'
             thiscfg['dac'] = gen.dict['dac']
-            thiscfg['gen'] = gen.fullpath
+            thiscfg['gen'] = gen['fullpath']
             thiscfg['ctrl'] = gen.dict['ctrl']
             thiscfg['fs'] = gen.dict['freq']['fs']
             thiscfg['nch'] = 1
@@ -1841,92 +1678,6 @@ class MkidsSoc(Overlay, QickConfig):
                 if not found:
                     raise RuntimeError("Could not find filter chain for PFB {}".format(ch_a['pfb']))
 
-    def config_clocks(self, force_init_clks):
-        """
-        Configure PLLs if requested, or if any ADC/DAC is not locked.
-        """
-              
-        # if we're changing the clock config, we must set the clocks to apply the config
-        if force_init_clks or (self.external_clk is not None) or (self.clk_output is not None):
-            QickSoc.set_all_clks(self)
-            self.download()
-        else:
-            self.download()
-            if not QickSoc.clocks_locked(self):
-                QickSoc.set_all_clks(self)
-                self.download()
-        if not QickSoc.clocks_locked(self):
-            print(
-                "Not all DAC and ADC PLLs are locked. You may want to repeat the initialization of the QickSoc.")
-
-    def list_rf_blocks(self, rf_config):
-        """
-        Lists the enabled ADCs and DACs and get the sampling frequencies.
-        XRFdc_CheckBlockEnabled in xrfdc_ap.c is not accessible from the Python interface to the XRFdc driver.
-        This re-implements that functionality.
-        """
-
-        self.hs_adc = rf_config['C_High_Speed_ADC'] == '1'
-
-        self.dac_tiles = []
-        self.adc_tiles = []
-        dac_fabric_freqs = []
-        adc_fabric_freqs = []
-        refclk_freqs = []
-        self.dacs = {}
-        self.adcs = {}
-
-        for iTile in range(4):
-            if rf_config['C_DAC%d_Enable' % (iTile)] != '1':
-                continue
-            self.dac_tiles.append(iTile)
-            f_fabric = float(rf_config['C_DAC%d_Fabric_Freq' % (iTile)])
-            f_refclk = float(rf_config['C_DAC%d_Refclk_Freq' % (iTile)])
-            dac_fabric_freqs.append(f_fabric)
-            refclk_freqs.append(f_refclk)
-            fs = float(rf_config['C_DAC%d_Sampling_Rate' % (iTile)])*1000
-            interpolation = int(rf_config['C_DAC%d_Interpolation' % (iTile)])
-            for iBlock in range(4):
-                if rf_config['C_DAC_Slice%d%d_Enable' % (iTile, iBlock)] != 'true':
-                    continue
-                self.dacs["%d%d" % (iTile, iBlock)] = {'fs': fs,
-                                                       'f_fabric': f_fabric,
-                                                       'interpolation' : interpolation}
-
-        for iTile in range(4):
-            if rf_config['C_ADC%d_Enable' % (iTile)] != '1':
-                continue
-            self.adc_tiles.append(iTile)
-            f_fabric = float(rf_config['C_ADC%d_Fabric_Freq' % (iTile)])
-            f_refclk = float(rf_config['C_ADC%d_Refclk_Freq' % (iTile)])
-            adc_fabric_freqs.append(f_fabric)
-            refclk_freqs.append(f_refclk)
-            fs = float(rf_config['C_ADC%d_Sampling_Rate' % (iTile)])*1000
-            decimation = int(rf_config['C_ADC%d_Decimation' % (iTile)])
-            for iBlock in range(4):
-                if self.hs_adc:
-                    if iBlock >= 2 or rf_config['C_ADC_Slice%d%d_Enable' % (iTile, 2*iBlock)] != 'true':
-                        continue
-                else:
-                    if rf_config['C_ADC_Slice%d%d_Enable' % (iTile, iBlock)] != 'true':
-                        continue
-                self.adcs["%d%d" % (iTile, iBlock)] = {'fs': fs,
-                                                       'f_fabric': f_fabric,
-                                                       'decimation' : decimation}
-
-        def get_common_freq(freqs):
-            """
-            Check that all elements of the list are equal, and return the common value.
-            """
-            if not freqs:  # input is empty list
-                return None
-            if len(set(freqs)) != 1:
-                raise RuntimeError("Unexpected frequencies:", freqs)
-            return freqs[0]
-
-        self['refclk_freq'] = get_common_freq(refclk_freqs)
-
-
     def getSamplingFrequencies(self, iDual):
         """
         For the specified iDual chain, return the two sampling frequencies in MHz.
@@ -1947,11 +1698,11 @@ class MkidsSoc(Overlay, QickConfig):
         aTile = chain['analysis']['adc']['tile']
         aCh = chain['analysis']['adc']['ch']
         adc = aTile+aCh
-        fsAdc = self.adcs[adc]['fs']
+        fsAdc = self['rf']['adcs'][adc]['fs']
         sTile = chain['synthesis']['dac']['tile']
         sCh = chain['synthesis']['dac']['ch']
         dac = sTile+sCh
-        fsDac = self.dacs[dac]['fs']
+        fsDac = self['rf']['dacs'][dac]['fs']
         return fsAdc,fsDac
 
 

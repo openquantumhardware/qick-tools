@@ -1,7 +1,7 @@
-from qick.qick import SocIp
+from qick.qick import SocIP
 import numpy as np
 
-class AxisDdsCicV2(SocIp):
+class AxisDdsCicV2(SocIP):
     bindto = ['user.org:user:axis_ddscic_v2:1.0']
 
     # Decimation range.
@@ -110,7 +110,7 @@ class AxisDdsCicV2(SocIp):
                 self.addr_we_reg = 1
                 self.addr_we_reg = 0                
         
-class AxisCicV1(SocIp):
+class AxisCicV1(SocIP):
     bindto = ['user.org:user:axis_cic_v1:1.0']
     
     # Decimation range.
@@ -168,7 +168,7 @@ class AxisCicV1(SocIp):
             self.decimate(value)
             self.qsel(qsel)    
     
-class AxisDdsV2(SocIp):
+class AxisDdsV2(SocIP):
     bindto = ['user.org:user:axis_dds_v2:1.0']
     
     # Sampling frequency and frequency resolution (Hz).
@@ -272,7 +272,7 @@ class AxisDdsV2(SocIp):
         for ch in np.arange(self.NCH_TOTAL):
             self.ddscfg(g=0, ch=ch)            
             
-class AxisDdsV3(SocIp):
+class AxisDdsV3(SocIP):
     bindto = ['user.org:user:axis_dds_v3:1.0']
     
     # Sampling frequency and frequency resolution (Hz).
@@ -376,7 +376,7 @@ class AxisDdsV3(SocIp):
         for ch in np.arange(self.NCH_TOTAL):
             self.ddscfg(g=0, ch=ch)            
 
-class AxisDdsDualV1(SocIp):
+class AxisDdsDualV1(SocIP):
     bindto = ['user.org:user:axis_dds_dual_v1:1.0']
     
     # Sampling frequency and frequency resolution (Hz).

@@ -1,8 +1,8 @@
 import numpy as np
 from pynq.buffer import allocate
-from qick.qick import SocIp
+from qick.qick import SocIP
 
-class AxisChSelPfbV2(SocIp):
+class AxisChSelPfbV2(SocIP):
     bindto = ['user.org:user:axis_chsel_pfb_v2:1.0']
     
     def __init__(self, description):
@@ -68,7 +68,7 @@ class AxisChSelPfbV2(SocIp):
         if tran < self.NT:
             return np.arange(tran*self.L, (tran+1)*self.L)
         else:
-            raise ValueError("%s: transaction should be within [0,%d]" % (self.fullpath, self.NT-1))
+            raise ValueError("%s: transaction should be within [0,%d]" % (self['fullpath'], self.NT-1))
         
     @property
     def enabled_channels(self):
@@ -81,10 +81,10 @@ class AxisChSelPfbV2(SocIp):
     def set(self, ch, single=True, verbose=False):
         # Sanity check.
         if ch < 0 or ch >= self.NCH:
-            raise ValueError("%s: channel must be within [0,%d]" %(self.fullpath, self.NCH-1))
+            raise ValueError("%s: channel must be within [0,%d]" %(self['fullpath'], self.NCH-1))
         else:
             if verbose:
-                print("{}: channel = {}".format(self.fullpath, ch))
+                print("{}: channel = {}".format(self['fullpath'], ch))
 
             # Is channel already enabled?
             if ch not in self.dict['chan']:
@@ -93,13 +93,13 @@ class AxisChSelPfbV2(SocIp):
                     self.alloff()
 
                     if verbose:
-                        print("{}: masking previously enabled channels.".format(self.fullpath))
+                        print("{}: masking previously enabled channels.".format(self['fullpath']))
 
                 # Transaction number and bit index.
                 ntran, addr, bit = self.ch2tran(ch)
 
                 if verbose:
-                    print("{}: ch = {}, ntran = {}, addr = {}, bit = {}".format(self.fullpath, ch, ntran, addr, bit))
+                    print("{}: ch = {}, ntran = {}, addr = {}, bit = {}".format(self['fullpath'], ch, ntran, addr, bit))
 
                 # Enable neighbors.
                 self.dict['chan'] = np.append(self.dict['chan'], self.tran2channels(ntran))
@@ -110,7 +110,7 @@ class AxisChSelPfbV2(SocIp):
                 # Data Mask.
                 data = self.dict['addr'][addr] + 2**bit
                 if verbose:
-                    print("{}: Original Mask: {}, Updated Mask: {}".format(self.fullpath, self.dict['addr'][addr], data))
+                    print("{}: Original Mask: {}, Updated Mask: {}".format(self['fullpath'], self.dict['addr'][addr], data))
                 self.dict['addr'][addr] = data
             
                 # Write Value.
@@ -139,7 +139,7 @@ class AxisChSelPfbV2(SocIp):
     def ch2idx(self,ch):
         return np.mod(ch,self.L)
 
-class AxisChSelPfbV3(SocIp):
+class AxisChSelPfbV3(SocIP):
     bindto = ['user.org:user:axis_chsel_pfb_v3:1.0']
     
     def __init__(self, description):
@@ -193,7 +193,7 @@ class AxisChSelPfbV3(SocIp):
         if tran < self.NT:
             return np.arange(tran*self.L, (tran+1)*self.L)
         else:
-            raise ValueError("%s: transaction should be within [0,%d]" % (self.fullpath, self.NT-1))
+            raise ValueError("%s: transaction should be within [0,%d]" % (self['fullpath'], self.NT-1))
         
     @property
     def enabled_channels(self):
@@ -206,10 +206,10 @@ class AxisChSelPfbV3(SocIp):
     def set(self, ch, single=True, verbose=False):
         # Sanity check.
         if ch < 0 or ch >= self.NCH:
-            raise ValueError("%s: channel must be within [0,%d]" %(self.fullpath, self.NCH-1))
+            raise ValueError("%s: channel must be within [0,%d]" %(self['fullpath'], self.NCH-1))
         else:
             if verbose:
-                print("{}: channel = {}".format(self.fullpath, ch))
+                print("{}: channel = {}".format(self['fullpath'], ch))
 
             # Is channel already enabled?
             if ch not in self.dict['chan']:
@@ -218,13 +218,13 @@ class AxisChSelPfbV3(SocIp):
                     self.alloff()
 
                     if verbose:
-                        print("{}: masking previously enabled channels.".format(self.fullpath))
+                        print("{}: masking previously enabled channels.".format(self['fullpath']))
 
                 # Transaction number and bit index.
                 ntran, addr, bit = self.ch2tran(ch)
 
                 if verbose:
-                    print("{}: ch = {}, ntran = {}, bit = {}".format(self.fullpath, ch, ntran, bit))
+                    print("{}: ch = {}, ntran = {}, bit = {}".format(self['fullpath'], ch, ntran, bit))
 
                 # Enable neighbors.
                 self.dict['chan'] = np.append(self.dict['chan'], self.tran2channels(ntran))
@@ -235,7 +235,7 @@ class AxisChSelPfbV3(SocIp):
                 # Data Mask.
                 data = self.dict['punct'] + 2**bit
                 if verbose:
-                    print("{}: Original Mask: {}, Updated Mask: {}".format(self.fullpath, self.dict['punct'], data))
+                    print("{}: Original Mask: {}, Updated Mask: {}".format(self['fullpath'], self.dict['punct'], data))
                 self.dict['punct'] = data
             
                 # Write Value.
@@ -265,7 +265,7 @@ class AxisChSelPfbV3(SocIp):
     def ch2idx(self,ch):
         return np.mod(ch,self.L)
 
-class AxisStreamerV1(SocIp):
+class AxisStreamerV1(SocIP):
     # AXIS_Streamer V1 registers.
     # START_REG
     # * 0 : stop.
@@ -413,7 +413,7 @@ class AxisStreamerV1(SocIp):
 
         return [indx,data]
 
-class AxisKidsimV3(SocIp):
+class AxisKidsimV3(SocIP):
     bindto = ['user.org:user:axis_kidsim_v3:1.0']
     
     # Sampling frequency and frequency resolution (Hz).
@@ -616,7 +616,7 @@ class AxisKidsimV3(SocIp):
             # Write values into hardware.
             self.set_resonator_regs(config, verbose)
 
-class AxisFilterV1(SocIp):
+class AxisFilterV1(SocIP):
     bindto = ['user.org:user:axis_filter_v1:1.0']
     
     def __init__(self, description):
@@ -676,14 +676,14 @@ class AxisFilterV1(SocIp):
         # Sanity check.
         if 'channel' in config.keys():
             if (self.N <= config['channel'] < 0):
-                raise ValueError("%s: channel must be within [0,%d]" % (self.fullpath, self.N-1))
+                raise ValueError("%s: channel must be within [0,%d]" % (self['fullpath'], self.N-1))
         else:
-            raise ValueError("%s: channel must be defined" % (self.fullpath))
+            raise ValueError("%s: channel must be defined" % (self['fullpath']))
 
         # Check if channel is already active.
         if config['channel'] in self.dict['channels']:
             if verbose:
-                print("{}: channel {} is already active.".format(self.fullpath,config['channel']))
+                print("{}: channel {} is already active.".format(self['fullpath'],config['channel']))
         else:
             # Add channel to active list.
             self.dict['channels'].append(config['channel'])
