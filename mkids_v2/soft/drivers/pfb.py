@@ -1,5 +1,6 @@
 import numpy as np
 from qick.qick import SocIP
+from numbers import Number
 
 class AbsPfbAnalysis(SocIP):
     # Trace parameters.
@@ -185,53 +186,20 @@ class AbsPfbAnalysis(SocIP):
         # ADC1, tile 3.
         # m32_axis: I
         # m33_axis: Q
-        adc_dict = {
-            '0' :   {
-                        '0' : {'port 0' : 'm00', 'port 1' : 'm01'}, 
-                        '1' : {'port 0' : 'm02', 'port 1' : 'm03'}, 
-                    },
-            '1' :   {
-                        '0' : {'port 0' : 'm10', 'port 1' : 'm11'}, 
-                        '1' : {'port 0' : 'm12', 'port 1' : 'm13'}, 
-                    },
-            '2' :   {
-                        '0' : {'port 0' : 'm20', 'port 1' : 'm21'}, 
-                        '1' : {'port 0' : 'm22', 'port 1' : 'm23'}, 
-                    },
-            '3' :   {
-                        '0' : {'port 0' : 'm30', 'port 1' : 'm31'}, 
-                        '1' : {'port 0' : 'm32', 'port 1' : 'm33'}, 
-                    },
-                    }
-
-        p0_n = port0[0:3]
 
         # Find adc<->port.
         # IQ on same port.
         if port1 is None:
-            tile = p0_n[1]
-            adc  = p0_n[2]
-            return tile,adc
+            tile, adc = port0[1:3]
+            return tile, adc
 
         # IQ on different ports.
         else:
-            p1_n = port1[0:3]
-
-            # IQ on different ports.
-            for tile in adc_dict.keys():
-                for adc in adc_dict[tile].keys():
-                    # First possibility.
-                    if p0_n == adc_dict[tile][adc]['port 0']:
-                        if p1_n == adc_dict[tile][adc]['port 1']:
-                            return tile,adc
-                    # Second possibility.
-                    if p1_n == adc_dict[tile][adc]['port 0']:
-                        if p0_n == adc_dict[tile][adc]['port 1']:
-                            return tile,adc
-
-        # If I got here, adc not found.
-        raise RuntimeError("Cannot find correspondance with any ADC for ports %s,%s" % (port0,port1))
-
+            tile0, adc0 = port0[1:3]
+            tile1, adc1 = port1[1:3]
+            if tile0 != tile1 or int(adc0)//2 != int(adc1)//2:
+                raise RuntimeError("Cannot find correspondance with any ADC for ports %s,%s" % (port0,port1))
+            return tile0, str(int(adc0)//2)
 
     def freq2ch(self,f):
         """
@@ -261,13 +229,7 @@ class AbsPfbAnalysis(SocIP):
         if np.any(abs(f) > fMax):
                     raise ValueError("Frequency value %s out of allowed range [%f,%f]" % (str(f),-fMax, fMax))
 
-        k = np.round(f/self.dict['freq']['fc']).astype(int)
-        if isinstance(k,np.int64):
-            if k < 0:
-                k += self.dict['N']
-        else:
-            k[k<0] += self.dict['N']
-        return k
+        return np.round(f/self.dict['freq']['fc']).astype(int) % self.dict['N']
     
     def ch2freq(self,ch):
         """
@@ -295,16 +257,10 @@ class AbsPfbAnalysis(SocIP):
         if np.any(ch < 0) or np.any(ch >= N):
                     raise ValueError("Channel value %s out of allowed range [0,%d)" % (str(ch),N))
       
-        fc = self.dict['freq']['fc']
-        freq = ch*fc
-        
-        if isinstance(ch, int) or isinstance(ch, np.int64):
-            if ch >= N//2: 
-                freq -= N*fc
-        else:           
-            freq = ch*fc
-            freq[ch >= N//2] -= N*fc
-        return freq
+        # wrap to the range [-N//2, N//2-1]
+        ch = ((ch + N//2) % N) - N//2
+
+        return ch*self.dict['freq']['fc']
             
     def qout(self, qout):
         self.qout_reg = qout
@@ -315,8 +271,11 @@ class AxisPfbAnalysis(AbsPfbAnalysis):
     Supports AxisPfb4x1024V1, AxisPfbaPr4x256V1, AxisPfb4x64V1
     """
     bindto = ['user.org:user:axis_pfb_4x1024_v1:1.0'   ,
+              'QICK:QICK:axis_pfb_4x1024_v1:1.0'   ,
               'user.org:user:axis_pfb_4x64_v1:1.0'     ,
-              'user.org:user:axis_pfba_pr_4x256_v1:1.0']
+              'QICK:QICK:axis_pfb_4x64_v1:1.0'     ,
+              'user.org:user:axis_pfba_pr_4x256_v1:1.0',
+              'QICK:QICK:axis_pfba_pr_4x256_v1:1.0']
     
     def __init__(self, description):
         # Initialize ip
@@ -472,43 +431,9 @@ class AbsPfbSynthesis(SocIP):
         #
         # First value, tile.
         # Second value, dac.
-        dac_dict =  {
-            '0' :   {
-                        '0' : {'port' : 's00'}, 
-                        '1' : {'port' : 's01'}, 
-                        '2' : {'port' : 's02'}, 
-                        '3' : {'port' : 's03'}, 
-                    },
-            '1' :   {
-                        '0' : {'port' : 's10'}, 
-                        '1' : {'port' : 's11'}, 
-                        '2' : {'port' : 's12'}, 
-                        '3' : {'port' : 's13'}, 
-                    },
-            '2' :   {
-                        '0' : {'port' : 's20'}, 
-                        '1' : {'port' : 's21'}, 
-                        '2' : {'port' : 's22'}, 
-                        '3' : {'port' : 's23'}, 
-                    },
-            '3' :   {
-                        '0' : {'port' : 's30'}, 
-                        '1' : {'port' : 's31'}, 
-                        '2' : {'port' : 's32'}, 
-                        '3' : {'port' : 's33'}, 
-                    },
-                    }
-        p_n = port[0:3]
 
-        # Find adc<->port.
-        for tile in dac_dict.keys():
-            for dac in dac_dict[tile].keys():
-                if p_n == dac_dict[tile][dac]['port']:
-                    return tile,dac
-
-        # If I got here, dac not found.
-        raise RuntimeError("Cannot find correspondance with any DAC for port %s" % (port))
-
+        tile, dac = port[1:3]
+        return tile, dac
 
     def freq2ch(self,f):
         """
@@ -539,13 +464,7 @@ class AbsPfbSynthesis(SocIP):
         if np.any(abs(f) > fMax):
                     raise ValueError("Frequency value %s out of allowed range [%f,%f]" % (str(f),-fMax, fMax))
 
-        k = np.round(f/self.dict['freq']['fc']).astype(int)
-        if isinstance(k,np.int64):
-            if k < 0:
-                k += self.dict['N']
-        else:
-            k[k<0] += self.dict['N']
-        return k
+        return np.round(f/self.dict['freq']['fc']).astype(int) % self.dict['N']
 
     def ch2freq(self,ch):
         """
@@ -574,16 +493,10 @@ class AbsPfbSynthesis(SocIP):
         if np.any(ch < 0) or np.any(ch >= N):
                     raise ValueError("Channel value %s out of allowed range [0,%d)" % (str(ch),N))
       
-        fc = self.dict['freq']['fc']
-        freq = ch*fc
-        
-        if isinstance(ch, int) or isinstance(ch, np.int64):
-            if ch >= N//2: 
-                freq -= N*fc
-        else:           
-            freq = ch*fc
-            freq[ch >= N//2] -= N*fc
-        return freq
+        # wrap to the range [-N//2, N//2-1]
+        ch = ((ch + N//2) % N) - N//2
+
+        return ch*self.dict['freq']['fc']
 
     def qout(self, value):
         self.qout_reg = value
@@ -594,8 +507,11 @@ class AxisPfbSynthesis(AbsPfbSynthesis):
     Supports AxisPfbSynth4x1024V1, AxisPfbsPr4x256V1, AxisPfbSynth4x64V1
     """
     bindto = ['user.org:user:axis_pfbsynth_4x1024_v1:1.0',
+              'QICK:QICK:axis_pfbsynth_4x1024_v1:1.0',
               'user.org:user:axis_pfbsynth_4x64_v1:1.0'  ,
-              'user.org:user:axis_pfbs_pr_4x256_v1:1.0'  ]
+              'QICK:QICK:axis_pfbsynth_4x64_v1:1.0'  ,
+              'user.org:user:axis_pfbs_pr_4x256_v1:1.0'  ,
+              'QICK:QICK:axis_pfbs_pr_4x256_v1:1.0'  ]
     
     def __init__(self, description):
         # Initialize ip

@@ -414,7 +414,8 @@ class AxisStreamerV1(SocIP):
         return [indx,data]
 
 class AxisKidsimV3(SocIP):
-    bindto = ['user.org:user:axis_kidsim_v3:1.0']
+    bindto = ['user.org:user:axis_kidsim_v3:1.0',
+            'QICK:QICK:axis_kidsim_v3:1.0']
     
     # Sampling frequency and frequency resolution (Hz).
     FS_DDS = 1000
@@ -452,11 +453,13 @@ class AxisKidsimV3(SocIP):
         self.NPUNCT = int(self.NCH/self.L)
         
     def configure(self, fs):
+        self.logger.debug("configure %s"%(fs))
         fs_hz = fs*1000*1000
         self.FS_DDS = fs_hz
         self.DF_DDS = self.FS_DDS/2**self.B_DDS
         
     def set_registers(self, dds_bval, dds_slope, dds_steps, dds_wait, dds_freq, iir_c0, iir_c1, iir_g, outsel, punct_id, addr):
+        self.logger.debug("set_registers %s"%([dds_bval, dds_slope, dds_steps, dds_wait, dds_freq, iir_c0, iir_c1, iir_g, outsel, punct_id, addr]))
         self.dds_bval_reg  = dds_bval
         self.dds_slope_reg = dds_slope
         self.dds_steps_reg = dds_steps
@@ -475,10 +478,12 @@ class AxisKidsimV3(SocIP):
         
     
     def set_resonator(self, config, verbose = False):
+        self.logger.debug("set_resonator %s"%(config))
         self.set_resonator_config(config, verbose)
         self.set_resonator_regs(config, verbose)
         
     def set_resonator_config(self, config, verbose = False):
+        self.logger.debug("set_resonator_config %s"%(config))
         # Check if sweep_freq is defined.
         if 'sweep_freq' not in config.keys():
             config['sweep_freq'] = 0.9
@@ -520,12 +525,16 @@ class AxisKidsimV3(SocIP):
         fs = self.FS_DDS/1e6
         ts = 1/fs
 
-        #  Check if dds_wait is defined.
-        if 'dds_wait' not in config.keys():
-            config['dds_wait'] = 1
+        # Check if nstep is defined.
+        if 'nstep' in config.keys():
+            config['dds_wait'] = int(config['sweep_time']/(config['nstep']*ts)) - 1
+        else:
+            #  Check if dds_wait is defined.
+            if 'dds_wait' not in config.keys():
+                config['dds_wait'] = 1
 
-        # Number of steps.
-        config['nstep'] = int(config['sweep_time']/((config['dds_wait']+1)*ts))
+            # Number of steps.
+            config['nstep'] = int(config['sweep_time']/((config['dds_wait']+1)*ts))
         
         # Sanity check (slope = 0).
         config['dds_bval_reg'] = int(round(config['sweep_freq']*1e6/self.DF_DDS))
@@ -552,6 +561,7 @@ class AxisKidsimV3(SocIP):
             print('{}: nstep      = {}'.format(self.__class__.__name__,config['nstep']))
     
     def set_resonator_regs(self, config, verbose = False):
+        self.logger.debug("set_resonator_regs %s"%(config))
         # DDS Section Registers.
         dds_bval_reg  = config['dds_bval_reg']
         dds_slope_reg = config['dds_slope_reg']
@@ -605,6 +615,7 @@ class AxisKidsimV3(SocIP):
         
 
     def setall(self, config, verbose = False):
+        self.logger.debug("setall %s"%(config))
         # Build configuration dictionary.
         self.set_resonator_config(config)
         
