@@ -3,6 +3,7 @@ from qick.qick import *
 from drivers.pfb import *
 from drivers.dds import *
 from drivers.misc import *
+from qick.rfboard import RFQickSoc216V1Mixin
 import numpy as np
 
 from tqdm.notebook import trange, tqdm
@@ -1705,6 +1706,8 @@ class MkidsSoc(QickSoc):
         fsDac = self['rf']['dacs'][dac]['fs']
         return fsAdc,fsDac
 
+class MkidsSocRF216V1(RFQickSoc216V1Mixin, MkidsSoc):
+    pass
 
 def delayFunc(fOffsets, amplitude, delay, phase):
     xs = amplitude*np.exp(1j*((2*np.pi*fOffsets*delay) + phase))
